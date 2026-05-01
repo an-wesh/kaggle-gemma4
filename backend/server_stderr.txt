@@ -1,0 +1,9 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\anwes\\OneDrive\\Desktop\\kaggle\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [70072] using WatchFiles
+INFO:     Started server process [30428]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+HTTP Error 404: {"quoteSummary":{"result":null,"error":{"code":"Not Found","description":"Quote not found for symbol: TATAMOTORS.NS"}}}
+$TATAMOTORS.NS: possibly delisted; no price data found  (period=1y) (Yahoo error = "No data found, symbol may be delisted")
+$TATAMOTORS.NS: possibly delisted; no price data found  (period=5d) (Yahoo error = "No data found, symbol may be delisted")

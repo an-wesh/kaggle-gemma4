@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"C:\\\\Users\\\\anwes\\\\OneDrive\\\\Desktop\\\\kaggle\\\\backend\"; Remove-Item data\\\\paper_trading.db -ErrorAction SilentlyContinue; $env:DEMO_MODE=\"true\"; & venv\\\\Scripts\\\\Activate.ps1; Start-Process -FilePath \"venv\\\\Scripts\\\\python.exe\" -ArgumentList \"main.py\" -NoNewWindow -RedirectStandardOutput \"server_stdout.txt\" -RedirectStandardError \"server_stderr.txt\"; Start-Sleep -Seconds 5; Get-Content server_stdout.txt,server_stderr.txt -ErrorAction SilentlyContinue)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/market-quotes\")",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/analyze-behavior\" -Method Post -ContentType \"application/json\" -Body \"{}\")",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/trade-history\")",
+      "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/portfolio\")"
+    ]
+  }
+}

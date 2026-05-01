@@ -1,0 +1,31 @@
+# Finsight OS — backend Python dependencies
+# Tested on Python 3.10, 3.11, 3.12. Pin major versions to avoid surprise breakage.
+
+# ── Web framework ──────────────────────────────────────────────────────────
+fastapi>=0.110,<0.120
+uvicorn[standard]>=0.27,<0.40
+python-multipart>=0.0.9         # required for FastAPI form / file uploads
+python-dotenv>=1.0,<2.0
+
+# ── Validation ─────────────────────────────────────────────────────────────
+pydantic>=2.5,<3.0
+
+# ── HTTP client ────────────────────────────────────────────────────────────
+httpx>=0.27,<0.30
+
+# ── Local AI runtime ───────────────────────────────────────────────────────
+# Ollama itself is a separate binary — install via curl -fsSL https://ollama.com/install.sh | sh
+# This is just the Python client.
+ollama>=0.4,<1.0
+
+# ── Local vector DB for SEBI RAG ───────────────────────────────────────────
+chromadb>=0.5,<2.0
+
+# ── Live market quotes (Yahoo Finance) ─────────────────────────────────────
+# yfinance handles Yahoo's auth quirks; httpx alone hits 401s.
+yfinance>=0.2.40
+
+# ── Live broker integration (optional — Live Kite Connect mode) ────────────
+# Lazy-imported in kite_client.py so demo + paper modes work without it.
+# Comment out if you don't need Live Kite Connect.
+kiteconnect>=4.2,<5.0

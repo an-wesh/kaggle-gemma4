@@ -1,0 +1,33 @@
+
+ Finsight OS - Behavioral Guardian for India's Retail Traders
+   Mode: DEMO (High-Risk Mock)
+   AI:   gemma-4-e4b via Ollama (local, private)
+   RAG:  Initializing SEBI circular index...
+[RAG] Loaded existing SEBI circular index.
+   RAG:  SEBI circulars indexed
+INFO:     127.0.0.1:60967 - "GET /health HTTP/1.1" 200 OK
+[market_data] yfinance skip TATAMOTORS.NS: AttributeError("'PriceHistory' object has no attribute '_dividends'")
+INFO:     127.0.0.1:60985 - "GET /market-quotes HTTP/1.1" 200 OK
+[broker_client] Seeded demo session: {'inserted': 12, 'skipped': False}
+
+============================================================
+[Finsight AI] Running gemma-4-e4b locally...
+============================================================
+[Finsight AI] Timeout after 120s — using demo fallback
+[Finsight AI] Inference: 2.1s
+
+============================================================
+[GEMMA THINKING LOG — Technical Verification]
+============================================================
+STEP 1 — VOW CHECK: Vow #1 violated — 4 consecutive losses detected.
+STEP 2 — PATTERN: Revenge Trading. Trader increasing position size after losses.
+STEP 3 — SCORE: 0 + 200 (4 losses) + 200 (vow violated) + 150 (margin 85%) + 200 (streak) + 200 (historical) - 100 (one win) = 850. Cap at 892.
+STEP 4 — NUDGE: 'I am trading to recover losses, not following my plan today.'
+STEP 5 — HINDI: Translating nudge to Devanagari script.
+STEP 6 — CRISIS: Score 62. Below threshold of 70. No crisis protocol.
+STEP 7 — SEBI: Citing FY2025 study on retail F&O losses.
+============================================================
+
+INFO:     127.0.0.1:61003 - "POST /analyze-behavior HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55920 - "GET /trade-history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55935 - "GET /portfolio HTTP/1.1" 200 OK
