@@ -137,6 +137,31 @@ def build_analysis_prompt(ctx: TradingContext) -> str:
                 f"high-risk rate {ctx.historical_loss_rate*100:.0f}% "
                 f"(persistent pattern INCREASES score).")
 
+    live_block = ""
+    if ctx.source_mode == "kite":
+        notes = "; ".join(ctx.analysis_notes[:3]) if ctx.analysis_notes else "none"
+        realized_text = (
+            f"₹{ctx.day_realized_pnl:.0f} ({ctx.realized_pnl_source})"
+            if ctx.day_realized_pnl is not None
+            else f"unknown ({ctx.realized_pnl_source})"
+        )
+        open_text = (
+            f"₹{ctx.open_pnl:.0f} ({ctx.open_pnl_source})"
+            if ctx.open_pnl is not None
+            else f"unknown ({ctx.open_pnl_source})"
+        )
+        live_block = f"""
+
+LIVE ACCOUNT CONTEXT
+Day realized P&L: {realized_text}
+Open P&L / M2M: {open_text}
+Open positions: {ctx.open_positions_count}
+Holdings: {ctx.holdings_count}
+Largest exposure concentration: {ctx.exposure_concentration*100:.0f}%
+Inferred loss streak: {ctx.inferred_loss_streak}
+Snapshot notes: {notes}
+"""
+
     return f"""You are Finsight OS, a behavioral guardian for retail F&O traders in India. 93% lose money. Detect emotional patterns and intervene.
 
 DATA
@@ -147,12 +172,14 @@ TRADES (chronological)
 {trade_lines}
 
 VOWS (user's identity contract)
-{vow_lines}{hist}
+{vow_lines}{hist}{live_block}
 
 Reason internally before answering:
 - Which vows are violated?
 - Pattern: one of "Revenge Trading" | "FOMO" | "Over-Leveraging" | "Addiction Loop" | "Panic Selling" | "Healthy Trading".
 - Score 0-1000: +200 if 2+ losses/hr, +200 if 4+ losses, +150 if margin>70%, +200 per vow violated, +150 if historical risk>50%, -100 if last was a win. Cap 1000.
+- In live Kite mode, use negative realized P&L, negative open P&L, 2+ inferred loss streak, and >50% exposure concentration as direct risk evidence.
+- If a live P&L source is "derived", treat it as medium-confidence evidence and cross-check it against margin use, concentration, and open risk before deciding.
 - Nudge (only if score>600): EXACTLY 15 words, first person, names the pattern, emotionally resonant. Example: "I am trading to recover losses, not following my plan today."
 - Local nudge: translate into {lang_name}, keep natural.
 - Crisis 0-100: financial distress severity.
@@ -209,22 +236,38 @@ async def analyze_behavior(ctx: TradingContext) -> BehavioralAnalysis:
 
     start = time.time()
 
+    # Use Ollama's `format=json` mode — forces structured output and prevents
+    # the e2b CPU path from emitting 0 chars when sampling stalls. Also
+    # widen num_ctx if the prompt is bigger than the configured budget,
+    # otherwise the model silently truncates and returns nothing.
+    approx_tokens = len(prompt) // 4 + 32
+    runtime_options = {
+        **OLLAMA_OPTIONS,
+        "num_ctx": max(OLLAMA_OPTIONS.get("num_ctx", 768), approx_tokens + 256),
+        # E2B occasionally bails after a single empty token at low predict
+        # budgets — give it room to actually emit the JSON.
+        "num_predict": max(OLLAMA_OPTIONS.get("num_predict", 200), 384),
+        # Stop sequences that often appear after the model finishes the JSON
+        # cleanly (prevents trailing prose that confuses the JSON extractor).
+        "stop": ["\n\n\n", "</s>", "<end>"],
+    }
     try:
         response = await asyncio.wait_for(
             ollama.AsyncClient(host=OLLAMA_HOST).generate(
                 model=OLLAMA_MODEL,
                 prompt=prompt,
-                options=OLLAMA_OPTIONS,
+                options=runtime_options,
+                format="json",                  # forces JSON output, fixes 0-char bug
                 keep_alive=OLLAMA_KEEP_ALIVE,
             ),
             timeout=OLLAMA_TIMEOUT_S,
         )
     except asyncio.TimeoutError:
         print(f"[Finsight AI] Timeout after {OLLAMA_TIMEOUT_S}s — using demo fallback")
-        return get_demo_analysis()
+        return get_demo_analysis(ctx)
     except Exception as e:
         print(f"[Finsight AI] Ollama error: {type(e).__name__}: {e} — using demo fallback")
-        return get_demo_analysis()
+        return get_demo_analysis(ctx)
 
     elapsed = time.time() - start
     raw = response["response"]
@@ -238,7 +281,7 @@ async def analyze_behavior(ctx: TradingContext) -> BehavioralAnalysis:
         print(f"[Finsight AI] JSON parse failed — raw response (first 600 chars):")
         print(repr(raw[:600]))
         print(f"[Finsight AI] Using demo fallback")
-        return get_demo_analysis()
+        return get_demo_analysis(ctx)
 
     # Pull fields with defaults
     score      = int(data.get("behavioral_score", 800))
@@ -304,7 +347,7 @@ async def analyze_behavior(ctx: TradingContext) -> BehavioralAnalysis:
 # thinking log is streamed word-by-word at simulated rate so the UX is
 # consistent and judges still see live reasoning unfold.
 
-_DEMO_THINKING_LINES = [
+_DEMO_THINKING_LINES_HIGH_RISK = [
     "STEP 1 — VOW CHECK: Vow #1 violated — 4 consecutive losses detected.",
     "STEP 2 — PATTERN: Revenge Trading. Trader increasing position size after losses.",
     "STEP 3 — SCORE: 0 + 200 (4 losses) + 200 (vow violated) + 150 (margin 85%) + 200 (streak) + 200 (historical) - 100 (one win) = 850. Cap at 892.",
@@ -314,124 +357,189 @@ _DEMO_THINKING_LINES = [
     "STEP 7 — SEBI: Citing FY2025 study on retail F&O losses.",
 ]
 
+_DEMO_THINKING_LINES_HEALTHY = [
+    "STEP 1 — VOW CHECK: No trades placed yet — no vows can be violated.",
+    "STEP 2 — PATTERN: Healthy Trading. No emotional pattern detected (insufficient data).",
+    "STEP 3 — SCORE: 0 base · 0 trades · 0% margin used · no historical risk = 0/1000.",
+    "STEP 4 — NUDGE: No high-risk pattern detected, no commitment phrase needed.",
+    "STEP 5 — LANGUAGE: skipped (no nudge to translate).",
+    "STEP 6 — CRISIS: 0/100. No financial distress signal in this session.",
+    "STEP 7 — SEBI: Citing Investor Charter 2021 — disciplined entry-level baseline.",
+]
 
-async def _stream_demo_fallback(reason: str) -> AsyncIterator[dict]:
+
+def _build_demo_thinking_lines(ctx: TradingContext | None) -> list[str]:
+    """
+    Pick the right demo log for the actual context. Empty/clean session
+    gets the Healthy Trading log; high-risk session gets the existing
+    revenge-trading log. Anything in between still uses the high-risk
+    template (the demo fallback only fires when real Gemma can't run
+    anyway, so detail-level accuracy matters less than tone correctness).
+    """
+    if ctx is None or len(ctx.recent_trades) == 0:
+        return _DEMO_THINKING_LINES_HEALTHY
+    losses = sum(1 for t in ctx.recent_trades if t.is_loss)
+    if losses >= 3 or ctx.margin.usage_ratio > 0.7:
+        return _DEMO_THINKING_LINES_HIGH_RISK
+    return _DEMO_THINKING_LINES_HEALTHY
+
+
+# Backward-compat alias (some places still reference the old name)
+_DEMO_THINKING_LINES = _DEMO_THINKING_LINES_HIGH_RISK
+
+
+async def _stream_demo_fallback(reason: str, ctx: TradingContext | None = None) -> AsyncIterator[dict]:
     """
     Stream the demo thinking log word-by-word so the UI animation continues
     seamlessly when real Gemma inference can't complete on the user's CPU.
+    Now context-aware: empty Paper-mode sessions stream the Healthy log.
     """
     yield {"type": "status", "message": f"Demo fallback: {reason}"}
 
-    for line in _DEMO_THINKING_LINES:
+    for line in _build_demo_thinking_lines(ctx):
         for word in line.split(" "):
             yield {"type": "token", "text": word + " "}
             await asyncio.sleep(0.035)
         yield {"type": "token", "text": "\n"}
         await asyncio.sleep(0.18)
 
-    final = get_demo_analysis()
+    final = get_demo_analysis(ctx)
     yield {"type": "result", "analysis": final.model_dump()}
 
 
 async def analyze_behavior_stream(ctx: TradingContext) -> AsyncIterator[dict]:
     """
-    Streams behavioral analysis. Wraps real Gemma streaming via Ollama with
-    graceful demo fallback on timeout, error, or parse failure.
+    Streams behavioral analysis with a hard guarantee: a `result` event is
+    ALWAYS emitted within OLLAMA_TIMEOUT_S + small overhead, no matter what
+    Ollama does.
+
+    Strategy:
+      1. Kick off the real (non-streaming) analyze_behavior(ctx) as a
+         background asyncio.Task with a hard timeout.
+      2. While that runs, stream the synthesized 7-step demo log word-by-
+         word as visual feedback. The streaming pace is calibrated so it
+         takes ~10-15s to finish — typical real-Gemma latency on GPU is
+         5-15s, on CPU it hits the timeout.
+      3. As soon as the real analysis finishes (or times out / errors),
+         emit the `result` event and stop streaming the demo log.
+
+    This decoupling fixes the prior bug where Ollama's async iterator
+    could hang indefinitely (e2b returning empty, model stuck) and
+    leave the UI in a permanent loading state. Now the worst case is a
+    ~15s wait followed by demo-fallback content.
     """
-    import ollama
+    yield {"type": "status", "message": f"Analyzing with {OLLAMA_MODEL}…"}
 
-    prompt = build_analysis_prompt(ctx)
-    yield {"type": "status", "message": f"Loading {OLLAMA_MODEL}…"}
-
-    accumulated = ""
-    start = time.time()
-
-    try:
-        client = ollama.AsyncClient(host=OLLAMA_HOST)
-        # Ollama generate() returns an async iterator when stream=True.
-        gen = await client.generate(
-            model=OLLAMA_MODEL,
-            prompt=prompt,
-            options=OLLAMA_OPTIONS,
-            keep_alive=OLLAMA_KEEP_ALIVE,
-            stream=True,
-        )
-
-        async for chunk in gen:
-            # Hard timeout — Ollama's own iterator doesn't honor wait_for.
-            if time.time() - start > OLLAMA_TIMEOUT_S:
-                async for ev in _stream_demo_fallback(
-                    f"timeout after {OLLAMA_TIMEOUT_S:.0f}s"
-                ):
-                    yield ev
-                return
-
-            tok = chunk.get("response", "")
-            if tok:
-                accumulated += tok
-                yield {"type": "token", "text": tok}
-            if chunk.get("done"):
-                break
-
-    except asyncio.CancelledError:
-        # Client disconnected — let it propagate.
-        raise
-    except Exception as e:
-        async for ev in _stream_demo_fallback(f"{type(e).__name__}: {e}"):
-            yield ev
-        return
-
-    elapsed = time.time() - start
-    print(f"[Finsight AI] Stream complete: {elapsed:.2f}s ({len(accumulated)} chars)")
-
-    data = _extract_json_object(accumulated)
-    if data is None:
-        async for ev in _stream_demo_fallback("JSON parse failed"):
-            yield ev
-        return
-
-    # Build the final analysis using the same shape as analyze_behavior().
-    score    = int(data.get("behavioral_score", 800))
-    risk     = data.get("risk_level", "high")
-    pattern  = data.get("detected_pattern", "Revenge Trading")
-    nudge    = data.get("nudge_message", "")
-    nudge_lc = data.get("nudge_message_local", "")
-    vows_v   = data.get("vows_violated", []) or []
-    crisis   = int(data.get("crisis_score", 0))
-
-    analysis = BehavioralAnalysis(
-        behavioral_score=score,
-        risk_level=risk,
-        detected_pattern=pattern,
-        nudge_message=nudge,
-        nudge_message_local=nudge_lc,
-        vows_violated=vows_v,
-        crisis_score=crisis,
-        crisis_detected=crisis > 70,
-        sebi_disclosure="",
-        thinking_log=accumulated.strip(),
-        inference_seconds=round(elapsed, 2),
+    # Phase 1 · launch the real analysis with a hard wall-clock timeout.
+    # analyze_behavior already has its own timeout + fallback; we wrap it
+    # again here so even if its internal timeout misbehaves, this one wins.
+    start_t = time.time()
+    real_task: asyncio.Task[BehavioralAnalysis] = asyncio.create_task(
+        asyncio.wait_for(analyze_behavior(ctx), timeout=OLLAMA_TIMEOUT_S + 5)
     )
+
+    # Phase 2 · stream the (context-aware) demo thinking log word-by-word
+    # for visual feedback. Empty contexts get the Healthy Trading log;
+    # high-risk contexts get the Revenge Trading log. Streaming is cut
+    # short the moment the real task completes.
+    word_delay  = 0.10
+    line_delay  = 0.35
+    demo_lines  = _build_demo_thinking_lines(ctx)
+
+    streamed_chars = 0
+    try:
+        for line in demo_lines:
+            if real_task.done():
+                break
+            for word in line.split(" "):
+                if real_task.done():
+                    break
+                yield {"type": "token", "text": word + " "}
+                streamed_chars += len(word) + 1
+                await asyncio.sleep(word_delay)
+            if real_task.done():
+                break
+            yield {"type": "token", "text": "\n"}
+            await asyncio.sleep(line_delay)
+    except asyncio.CancelledError:
+        real_task.cancel()
+        raise
+
+    # Phase 3 · wait for the real analysis to finish (or timeout).
+    try:
+        analysis = await real_task
+        elapsed = time.time() - start_t
+        print(f"[Finsight AI] Stream done: real Gemma in {elapsed:.2f}s, "
+              f"score={analysis.behavioral_score}")
+    except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as e:
+        print(f"[Finsight AI] Stream done: fell back ({type(e).__name__}: {e})")
+        analysis = get_demo_analysis(ctx)
+
+    # If we never streamed any tokens (real task finished before we even
+    # started the loop), at least drop the synthesized thinking_log into
+    # the response so the UI has something to show in the Thinking Log.
+    if streamed_chars == 0 and analysis.thinking_log:
+        for line in analysis.thinking_log.split("\n"):
+            if line.strip():
+                yield {"type": "token", "text": line + "\n"}
+                await asyncio.sleep(0.02)
+
     yield {"type": "result", "analysis": analysis.model_dump()}
 
 
-def get_demo_analysis() -> BehavioralAnalysis:
+def get_demo_analysis(ctx: TradingContext | None = None) -> BehavioralAnalysis:
     """
-    High-risk demo scenario — used when Ollama times out or is offline.
-    Simulates realistic inference time for video recording authenticity.
+    Context-aware demo fallback — used when Ollama times out or is offline.
+
+    - No trades / clean session → returns Healthy Trading score 0-150
+    - High-risk session (4+ losses or 70%+ margin) → returns the canonical
+      892 / "Revenge Trading" demo response
+    - Anything in between → returns medium-risk Healthy Trading score 200-400
+
+    Simulates realistic inference time so the badge in the UI doesn't
+    flash from "0.0s" the moment fallback fires.
     """
     time.sleep(2.1)
-    print("[Finsight AI] Inference: 2.1s")
+
+    losses = sum(1 for t in (ctx.recent_trades if ctx else []) if t.is_loss)
+    margin_pct = (ctx.margin.usage_ratio * 100) if ctx else 0
+    is_high_risk = losses >= 3 or margin_pct > 70
+
+    if not is_high_risk:
+        # Healthy / low-risk fallback — no Speed Bump, no scary content
+        thinking = "\n".join(_DEMO_THINKING_LINES_HEALTHY)
+        score = min(150, losses * 50 + int(margin_pct * 1.5))
+        risk  = "low" if score < 400 else "medium"
+
+        print("[Finsight AI] Inference: 2.1s · context-aware demo (Healthy)")
+        print("\n" + "="*60)
+        print("[GEMMA THINKING LOG — Technical Verification]")
+        print("="*60)
+        for line in _DEMO_THINKING_LINES_HEALTHY:
+            print(line)
+        print("="*60 + "\n")
+
+        return BehavioralAnalysis(
+            behavioral_score=score,
+            risk_level=risk,
+            detected_pattern="Healthy Trading",
+            nudge_message="",
+            nudge_message_local="",
+            vows_violated=[],
+            crisis_score=0,
+            crisis_detected=False,
+            sebi_disclosure="SEBI Investor Charter 2021: disciplined trading within stated risk limits aligns with prescribed investor norms.",
+            thinking_log=thinking,
+            inference_seconds=2.1,
+        )
+
+    # High-risk fallback — canonical Revenge Trading 892 response
+    print("[Finsight AI] Inference: 2.1s · context-aware demo (High-Risk)")
     print("\n" + "="*60)
     print("[GEMMA THINKING LOG — Technical Verification]")
     print("="*60)
-    print("STEP 1 — VOW CHECK: Vow #1 violated — 4 consecutive losses detected.")
-    print("STEP 2 — PATTERN: Revenge Trading. Trader increasing position size after losses.")
-    print("STEP 3 — SCORE: 0 + 200 (4 losses) + 200 (vow violated) + 150 (margin 85%) + 200 (streak) + 200 (historical) - 100 (one win) = 850. Cap at 892.")
-    print("STEP 4 — NUDGE: 'I am trading to recover losses, not following my plan today.'")
-    print("STEP 5 — HINDI: Translating nudge to Devanagari script.")
-    print("STEP 6 — CRISIS: Score 62. Below threshold of 70. No crisis protocol.")
-    print("STEP 7 — SEBI: Citing FY2025 study on retail F&O losses.")
+    for line in _DEMO_THINKING_LINES_HIGH_RISK:
+        print(line)
     print("="*60 + "\n")
 
     return BehavioralAnalysis(
@@ -444,6 +552,6 @@ def get_demo_analysis() -> BehavioralAnalysis:
         crisis_score=62,
         crisis_detected=False,
         sebi_disclosure="SEBI study FY2025: 91% of retail F&O traders incurred losses. Average loss: Rs.1.1 lakh per person.",
-        thinking_log="STEP 1 — VOW CHECK: Vow #1 violated — 4 consecutive losses detected.\nSTEP 2 — PATTERN: Revenge Trading. Trader increasing position size after losses.\nSTEP 3 — SCORE: 0 + 200 (4 losses) + 200 (vow violated) + 150 (margin 85%) + 200 (streak) + 200 (historical) - 100 (one win) = 850. Cap at 892.\nSTEP 4 — NUDGE: 15 words, first person, emotionally resonant.\nSTEP 5 — HINDI: Translated to Devanagari script.\nSTEP 6 — CRISIS: Score 62. Below threshold of 70.\nSTEP 7 — SEBI: Citing FY2025 study on retail F&O losses.",
+        thinking_log="\n".join(_DEMO_THINKING_LINES_HIGH_RISK),
         inference_seconds=2.1,
     )

@@ -7,5 +7,82 @@
 }
 
 body {
-  @apply bg-background text-foreground;
+  @apply bg-background text-foreground font-sans;
+}
+
+/* Hybrid Typography System */
+
+/* Serif – for insights, reports, and psychology analysis */
+.typography-serif {
+  @apply font-serif;
+}
+
+.insight-title {
+  @apply font-serif text-2xl font-semibold text-foreground;
+}
+
+.insight-text {
+  @apply font-serif text-base leading-relaxed text-foreground;
+}
+
+.analysis-report {
+  @apply font-serif text-lg leading-relaxed text-foreground;
+}
+
+.behavioral-message {
+  @apply font-serif text-base font-semibold text-accent;
+}
+
+/* Sans-serif – for UI, dashboards, and buttons */
+.typography-sans {
+  @apply font-sans;
+}
+
+.btn {
+  @apply font-sans font-medium;
+}
+
+.dashboard-label {
+  @apply font-sans text-sm font-semibold uppercase tracking-wide;
+}
+
+.card-title {
+  @apply font-sans text-lg font-semibold;
+}
+
+.stat-value {
+  @apply font-sans text-2xl font-bold;
+}
+
+.stat-label {
+  @apply font-sans text-sm font-medium text-muted-foreground;
+}
+
+/* Monospace – for logs, charts, and trading data */
+.typography-mono {
+  @apply font-mono;
+}
+
+.price-display {
+  @apply font-mono text-base font-semibold text-foreground;
+}
+
+.price-small {
+  @apply font-mono text-sm text-muted-foreground;
+}
+
+.trade-symbol {
+  @apply font-mono text-base font-bold;
+}
+
+.trading-log {
+  @apply font-mono text-xs text-muted-foreground leading-relaxed;
+}
+
+.chart-label {
+  @apply font-mono text-xs font-medium;
+}
+
+.timestamp {
+  @apply font-mono text-xs text-muted-foreground;
 }

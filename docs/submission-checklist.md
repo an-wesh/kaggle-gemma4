@@ -13,7 +13,7 @@ Single-page T-minus-24h walkthrough. Don't submit until every box is ticked.
 - [ ] **Three references** marked `🔗 NEEDED` in `docs/references.md` filled in with real URLs and quotes
 - [ ] **Fine-tune notebook** trained on Kaggle T4 → adapter pushed to HuggingFace Hub as `finsight-os/gemma4-e2b-sebi-lora-v1`
 - [ ] **Benchmark numbers** populated into `docs/finetune-results.md` (real measured table, not placeholder)
-- [ ] **Voiceover audio** received from Fiverr or backup option, dropped into DaVinci timeline
+- [ ] **Face-cam delivery rehearsed** against `docs/talking-points.md` — 3 clean takes recorded against the recording-setup checklist
 
 ## T-5 days: video shoot
 

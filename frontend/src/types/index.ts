@@ -92,9 +92,84 @@ export interface OpenPosition {
   side: "BUY" | "SELL";          // BUY = long, SELL = short
   quantity: number;
   avg_price: number;
+  exchange?: string;
+  product?: string;
+  pnl?: number;
+  m2m?: number;
+  last_price?: number;
+  exposure?: number;
 }
 
 export interface PortfolioResponse {
   positions: OpenPosition[];
   session_pnl: SessionPnL;
+}
+
+export interface KiteStatus {
+  configured: boolean;
+  authenticated: boolean;
+  user_name?: string;
+  user_id?: string;
+  error?: string;
+  session_source?: string | null;
+  expected_redirect_url?: string;
+  frontend_url?: string;
+  warning?: string | null;
+}
+
+export interface KiteMargins {
+  available_cash: number;
+  opening_balance: number;
+  utilised_debits: number;
+  utilised_m2m: number;
+  available: number;
+  used: number;
+  total: number;
+}
+
+export interface KiteHolding {
+  symbol: string;
+  exchange: string;
+  quantity: number;
+  avg_price: number;
+  ltp: number;
+  pnl: number;
+  day_change_pct: number;
+}
+
+export interface KiteWatchlistQuote {
+  symbol: string;
+  last_price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  change: number;
+  change_pct: number;
+  volume: number;
+}
+
+export interface KiteAccountSummary extends SessionPnL {
+  open_pnl: number;
+  open_pnl_source: "exact" | "derived" | "unknown";
+  realized_pnl_source: "exact" | "derived" | "unknown";
+  open_positions_count: number;
+  holdings_count: number;
+  net_day_pnl: number;
+  available_cash: number;
+  utilised_margin: number;
+  total_exposure: number;
+  exposure_concentration: number;
+  inferred_loss_streak: number;
+}
+
+export interface KiteAccountSnapshot {
+  margins: KiteMargins;
+  holdings: KiteHolding[];
+  positions: OpenPosition[];
+  trades: PaperTrade[];
+  watchlist: KiteWatchlistQuote[];
+  watchlist_symbols: string[];
+  summary: KiteAccountSummary;
+  warnings: string[];
 }

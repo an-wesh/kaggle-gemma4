@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-import yfinance as yf
+import yfinance as yf  # type: ignore[import-not-found]
 
 # ── Symbol mapping ────────────────────────────────────────────────────────────
 # Display names shown in the UI → Yahoo Finance ticker symbols.
@@ -35,7 +35,6 @@ SYMBOL_MAP: dict[str, str] = {
     "INFY":       "INFY.NS",
     "TCS":        "TCS.NS",
     "HDFCBANK":   "HDFCBANK.NS",
-    "TATAMOTORS": "TATAMOTORS.NS",
 }
 
 # Realistic 2026-era fallback prices used if Yahoo is unreachable.
@@ -48,7 +47,6 @@ FALLBACK_BASE: dict[str, float] = {
     "INFY":       1847.60,
     "TCS":        4102.50,
     "HDFCBANK":   1782.90,
-    "TATAMOTORS": 984.20,
 }
 
 CACHE_TTL_SECONDS = 30
@@ -139,17 +137,52 @@ def get_market_state(now: datetime | None = None) -> tuple[bool, str]:
 
 # ── Yahoo Finance fetch ───────────────────────────────────────────────────────
 
+def _fast_or_history_price(ticker, ysym: str) -> tuple[float | None, float | None]:
+    """
+    Try `fast_info` first (cheap); if that path raises the known
+    'PriceHistory' object has no attribute '_dividends' bug (affects
+    symbols with recent corporate actions, e.g. TATAMOTORS.NS demerger),
+    fall back to a daily history fetch.
+    """
+    try:
+        fi = ticker.fast_info
+        return (
+            float(fi.last_price) if fi.last_price is not None else None,
+            float(fi.previous_close) if fi.previous_close is not None else None,
+        )
+    except AttributeError:
+        # _dividends bug — fall through to history fetch
+        pass
+    except Exception:
+        pass
+
+    try:
+        hist = ticker.history(period="2d", auto_adjust=False)
+        if hist is None or hist.empty:
+            return (None, None)
+        closes = hist["Close"].tolist()
+        last  = float(closes[-1])
+        prev  = float(closes[-2]) if len(closes) >= 2 else last
+        return (last, prev)
+    except Exception:
+        return (None, None)
+
+
 def _fetch_yahoo_sync(yahoo_symbols: list[str]) -> list[dict[str, Any]]:
     """Fetch current quotes via yfinance (handles Yahoo auth internally)."""
     tickers = yf.Tickers(" ".join(yahoo_symbols))
     results: list[dict[str, Any]] = []
     for ysym in yahoo_symbols:
         try:
-            fi = tickers.tickers[ysym].fast_info
-            price = fi.last_price
-            prev  = fi.previous_close
+            price, prev = _fast_or_history_price(tickers.tickers[ysym], ysym)
             if price is None:
-                continue
+                # Use the FALLBACK_BASE so the row still renders rather than
+                # dropping out of the watchlist entirely.
+                display = ysym.replace(".NS", "")
+                fb = FALLBACK_BASE.get(display)
+                if fb is None:
+                    continue
+                price, prev = fb, fb
             results.append({
                 "symbol": ysym,
                 "regularMarketPrice": float(price),
@@ -157,7 +190,8 @@ def _fetch_yahoo_sync(yahoo_symbols: list[str]) -> list[dict[str, Any]]:
                 "regularMarketChangePercent": None,
             })
         except Exception as e:
-            print(f"[market_data] yfinance skip {ysym}: {e!r}")
+            # Suppress the noisy known-bad-symbol traceback; one line per skip.
+            print(f"[market_data] skip {ysym}: {type(e).__name__}")
     if not results:
         raise RuntimeError("yfinance returned no data for any symbol")
     return results

@@ -29,3 +29,8 @@ yfinance>=0.2.40
 # Lazy-imported in kite_client.py so demo + paper modes work without it.
 # Comment out if you don't need Live Kite Connect.
 kiteconnect>=4.2,<5.0
+
+# Used to encrypt the Kite access_token at rest in data/kite_access_token.encrypted
+# so the user doesn't have to re-OAuth every time the backend restarts.
+# Pattern adopted from anwesh's reference login_fixed.py.
+cryptography>=42.0,<46.0

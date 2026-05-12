@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { BehavioralAnalysis } from "@/types";
 import { api } from "@/lib/api";
+import { useMode } from "@/contexts/ModeContext";
+import { themeFor } from "@/lib/modeTheme";
 
 /**
  * Map a behavioral score + detected pattern to a Speed Bump cooldown.
@@ -29,16 +31,34 @@ function computeCooldown(analysis: BehavioralAnalysis | null): number {
   return s;
 }
 
-// Realistic NSE instruments with early-2026 prices
-const INSTRUMENTS = [
+// Default suggestions shown when the user hasn't built a watchlist yet
+// (and for Demo / Paper modes which don't use the Kite stock search).
+const DEFAULT_INSTRUMENTS = [
   { symbol: "RELIANCE",              price: 1298.40 },
   { symbol: "INFY",                  price: 1847.60 },
   { symbol: "TCS",                   price: 4102.50 },
   { symbol: "HDFCBANK",              price: 1782.90 },
-  { symbol: "TATAMOTORS",            price: 984.20  },
   { symbol: "NIFTY24DEC23000CE",     price: 187.50  },
   { symbol: "BANKNIFTY24DEC49000PE", price: 224.30  },
 ];
+
+// localStorage key shared with StockSearch.tsx — keeps the two components
+// in sync without needing a context or prop drill.
+const WATCHLIST_STORAGE_KEY = "finsight.kite.watchlist.v1";
+
+function readKiteWatchlist(): { symbol: string }[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map((s: any) => ({ symbol: String(s.tradingsymbol || "") })).filter(s => s.symbol)
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 interface Props {
   analysis: BehavioralAnalysis | null;
@@ -46,16 +66,41 @@ interface Props {
 }
 
 export function TradePanel({ analysis, onTradeExecuted }: Props) {
-  const [symbol,   setSymbol]   = useState(INSTRUMENTS[0].symbol);
+  const { mode } = useMode();
+  const theme    = themeFor(mode);
+
+  const [symbol,   setSymbol]   = useState(DEFAULT_INSTRUMENTS[0].symbol);
   const [quantity, setQuantity] = useState(10);
-  const [price,    setPrice]    = useState(INSTRUMENTS[0].price);
+  const [price,    setPrice]    = useState(DEFAULT_INSTRUMENTS[0].price);
   const [action,   setAction]   = useState<"BUY" | "SELL">("BUY");
+
+  // Watchlist-aware suggestions: in Kite mode, prefer the user's saved
+  // watchlist (set via StockSearch above). Falls back to DEFAULT_INSTRUMENTS
+  // when the watchlist is empty or in non-Kite modes. Re-reads on every
+  // mount + on window focus so adding a stock in StockSearch refreshes here.
+  const [watchlistSyms, setWatchlistSyms] = useState<{ symbol: string }[]>(() => readKiteWatchlist());
+  useEffect(() => {
+    if (mode !== "kite") return;
+    const refresh = () => setWatchlistSyms(readKiteWatchlist());
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [mode]);
+  const instrumentOptions = mode === "kite" && watchlistSyms.length > 0
+    ? watchlistSyms
+    : DEFAULT_INSTRUMENTS;
 
   // Speed Bump state
   const [showBump,    setShowBump]    = useState(false);
   const [typed,       setTyped]       = useState("");
   const [loading,     setLoading]     = useState(false);
   const [done,        setDone]        = useState(false);
+  // Live Kite second-stage confirmation modal (Q3=3.C: high-risk only)
+  const [showLiveConfirm, setShowLiveConfirm] = useState(false);
 
   // Cooldown state — counts down from cooldownTotal in 100ms ticks.
   const cooldownTotal = computeCooldown(analysis);
@@ -96,8 +141,12 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
 
   function handleSymbolChange(sym: string) {
     setSymbol(sym);
-    const inst = INSTRUMENTS.find(i => i.symbol === sym);
-    if (inst) setPrice(inst.price);
+    // Look up a default price across both the user's watchlist and the
+    // legacy DEFAULT_INSTRUMENTS table. If the symbol came from the user's
+    // free-form input (custom symbol not in either list), keep the current
+    // price — they'll type a fresh one in the Price field.
+    const known = DEFAULT_INSTRUMENTS.find(i => i.symbol === sym);
+    if (known) setPrice((known as any).price);
     setDone(false);
     setTyped("");
     setShowBump(false);
@@ -113,6 +162,9 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
 
   function handleTradeClick(type: "BUY" | "SELL") {
     setAction(type);
+    // Q3=3.C — Live Kite mode: low-risk trades skip the Speed Bump entirely
+    // (matches normal broker UX). High-risk trades fire Speed Bump THEN
+    // a second "Place LIVE Order on Zerodha" confirmation.
     if (isHigh) {
       setTyped("");
       setShowBump(true);
@@ -139,6 +191,17 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
     if (!canConfirm) return;
     setShowBump(false);
     setTyped("");
+    // Q3=3.C: in Live Kite mode AND high-risk trade, show one more confirm
+    // before sending to broker. Otherwise execute directly.
+    if (mode === "kite") {
+      setShowLiveConfirm(true);
+      return;
+    }
+    await executeTrade(action);
+  }
+
+  async function handleLiveConfirm() {
+    setShowLiveConfirm(false);
     await executeTrade(action);
   }
 
@@ -168,6 +231,7 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     marginBottom: "5px",
+    fontFamily: "var(--font-sans)",
   };
 
   return (
@@ -251,7 +315,7 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
                 fontSize: "18px", fontWeight: "800", color: "#1A1814",
                 marginBottom: "6px", letterSpacing: "-0.01em",
               }}>
-                Mindful Speed Bump
+                {theme.bumpHeadline}
               </h3>
               <p style={{ fontSize: "13px", color: "#6B6860", lineHeight: "1.6" }}>
                 Gemma 4 detected{" "}
@@ -275,9 +339,10 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
               }}>
                 Type this exactly:
               </p>
-              <p style={{
-                fontSize: "14px", color: "#991B1B",
+              <p className="behavioral-message" style={{
+                fontSize: "14px",
                 fontStyle: "italic", lineHeight: "1.6",
+                color: "#991B1B",
               }}>
                 "{required}"
               </p>
@@ -355,7 +420,7 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
                     ? `Reflect · ${Math.ceil(cooldownMs / 1000)}s`
                     : !matches
                       ? "Complete phrase to unlock"
-                      : `✓ Confirm ${action}`}
+                      : (action === "BUY" ? theme.confirmBuy : theme.confirmSell)}
               </button>
             </div>
 
@@ -365,6 +430,93 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
             }}>
               This pause is for your protection · Finsight OS
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Live Kite second-stage confirmation (Q3=3.C, high-risk only) ─ */}
+      {showLiveConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 60,
+          background: "rgba(26,24,20,0.55)",
+          backdropFilter: "blur(4px)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "16px",
+        }}>
+          <div style={{
+            background: "#ffffff",
+            borderRadius: "16px",
+            padding: "26px 24px",
+            maxWidth: "420px",
+            width: "100%",
+            border: "2px solid #16A34A",
+            boxShadow: "0 24px 64px rgba(22,163,74,0.2), 0 4px 16px rgba(0,0,0,0.1)",
+          }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: "10px",
+              marginBottom: "12px",
+            }}>
+              <div style={{
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: "#F0FDF4", border: "2px solid #16A34A",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="#16A34A" strokeWidth="3" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <div style={{
+                fontSize: "10px", fontWeight: "800", color: "#15803D",
+                letterSpacing: "0.07em",
+              }}>
+                FINAL CONFIRMATION · LIVE ZERODHA
+              </div>
+            </div>
+
+            <h3 style={{
+              fontSize: "17px", fontWeight: "800", color: "#1A1814",
+              letterSpacing: "-0.01em", marginBottom: "10px",
+            }}>
+              Place a REAL order for ₹{(quantity * price).toLocaleString("en-IN", {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+              })}?
+            </h3>
+            <p style={{ fontSize: "13px", color: "#6B6860", lineHeight: "1.6", marginBottom: "8px" }}>
+              <strong style={{ color: "#1A1814" }}>{action} {quantity}× {symbol}</strong> at ₹{price.toFixed(2)}
+              will be submitted to your Zerodha account via the Kite Connect API.
+            </p>
+            <p style={{ fontSize: "12px", color: "#9B9890", lineHeight: "1.5", marginBottom: "16px" }}>
+              You've cleared the Speed Bump. This is the final safety check before
+              the order moves real money.
+            </p>
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => setShowLiveConfirm(false)}
+                style={{
+                  flex: 1, padding: "11px", borderRadius: "8px",
+                  border: "1px solid #D0CCC4", background: "transparent",
+                  color: "#6B6860", fontSize: "13px", cursor: "pointer",
+                  fontWeight: "600", fontFamily: "inherit",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLiveConfirm}
+                style={{
+                  flex: 2, padding: "11px", borderRadius: "8px",
+                  border: "none", background: "#16A34A", color: "#ffffff",
+                  fontSize: "13px", fontWeight: "700", cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                ✓ Place LIVE Order
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -398,18 +550,30 @@ export function TradePanel({ analysis, onTradeExecuted }: Props) {
         </div>
 
         <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-          {/* Instrument selector */}
+          {/* Instrument selector — hybrid: pick from watchlist OR type any symbol */}
           <div>
             <label style={labelStyle}>Instrument</label>
-            <select
-              value={symbol}
-              onChange={e => handleSymbolChange(e.target.value)}
-              style={{ ...inputStyle, cursor: "pointer", appearance: "auto" }}
-            >
-              {INSTRUMENTS.map(i => (
-                <option key={i.symbol} value={i.symbol}>{i.symbol}</option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                value={symbol}
+                onChange={e => handleSymbolChange(e.target.value.toUpperCase().trim())}
+                placeholder="Type or pick a symbol"
+                list="finsight-instrument-options"
+                style={{ ...inputStyle, flex: 1, textTransform: "uppercase" }}
+              />
+              <datalist id="finsight-instrument-options">
+                {instrumentOptions.map(i => (
+                  <option key={i.symbol} value={i.symbol} />
+                ))}
+              </datalist>
+            </div>
+            {mode === "kite" && watchlistSyms.length === 0 && (
+              <div style={{ fontSize: 11, color: "#6B6860", marginTop: 4 }}>
+                Tip: search a stock in the Search & Trade panel above to add it to your watchlist —
+                it'll auto-suggest here.
+              </div>
+            )}
           </div>
 
           {/* Qty + Price row */}

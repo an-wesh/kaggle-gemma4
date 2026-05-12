@@ -8,6 +8,9 @@ interface KiteAvailability {
   configured: boolean;            // KITE_API_KEY present in backend .env
   authenticated: boolean;         // user has a live access_token
   user_name?: string;
+  session_source?: string | null;
+  expected_redirect_url?: string;
+  warning?: string | null;
   error?: string;
 }
 
@@ -21,6 +24,10 @@ export function ModeSelector() {
   const { setMode } = useMode();
   const [kite, setKite] = useState<KiteAvailability | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteValue, setPasteValue] = useState("");
+  const [pasteErr, setPasteErr] = useState<string | null>(null);
+  const [pasting, setPasting] = useState(false);
 
   // Probe whether the backend has Kite Connect configured.
   useEffect(() => {
@@ -39,13 +46,29 @@ export function ModeSelector() {
     setLoading(true);
     try {
       const { login_url } = await api.kiteLoginUrl();
-      // Set the mode FIRST so when the user comes back from Zerodha
-      // we land directly on the dashboard.
-      setMode("kite");
       window.location.href = login_url;
     } catch (e) {
       console.error("kite login failed:", e);
       setLoading(false);
+    }
+  }
+
+  async function submitPaste() {
+    if (pasting || !pasteValue.trim()) return;
+    setPasting(true);
+    setPasteErr(null);
+    try {
+      const r = await api.kiteManualCallback(pasteValue.trim());
+      const fresh = await api.kiteStatus();
+      setKite(fresh);
+      setShowPaste(false);
+      setPasteValue("");
+      setMode("kite");
+      console.log(`[kite] manual login OK as ${r.user_name}`);
+    } catch (e: any) {
+      setPasteErr(e?.message || "Could not exchange that token. Make sure you copied it from a fresh login.");
+    } finally {
+      setPasting(false);
     }
   }
 
@@ -169,10 +192,111 @@ export function ModeSelector() {
               loading ? "Redirecting…" :
               "Login with Zerodha"
             }
-            onClick={kite?.configured ? startKiteLogin : () => {}}
+            onClick={
+              !kite?.configured ? () => {} :
+              kite.authenticated ? () => pickMode("kite") :
+              startKiteLogin
+            }
             disabled={!kite?.configured || loading}
           />
         </div>
+
+        {kite?.configured && kite.warning && (
+          <div style={{
+            marginTop: "6px",
+            padding: "12px 14px",
+            background: "#FFFBEB",
+            border: "1px solid #FDE68A",
+            borderRadius: "12px",
+            fontSize: "12px",
+            color: "#92400E",
+            lineHeight: 1.55,
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: "4px" }}>
+              Live Kite setup note
+            </div>
+            <div>{kite.warning}</div>
+            {kite.expected_redirect_url && (
+              <div style={{ marginTop: "4px" }}>
+                Register this redirect URL exactly: <code>{kite.expected_redirect_url}</code>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Recovery-only manual paste fallback */}
+        {kite?.configured && !kite.authenticated && (
+          <div style={{
+            marginTop: "8px",
+            padding: "14px 16px",
+            background: "#FFFBEB",
+            border: "1px solid #FDE68A",
+            borderRadius: "12px",
+            fontSize: "12px",
+            color: "#7C5E10",
+          }}>
+            <button
+              onClick={() => setShowPaste(v => !v)}
+              style={{
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                color: "#92400E", fontWeight: 700, fontSize: "12px",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {showPaste ? "▾  Hide recovery login" : "▸  Redirect misconfigured? Use recovery login"}
+            </button>
+            {showPaste && (
+              <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                <p style={{ margin: 0, lineHeight: 1.55 }}>
+                  Browser login is expected to return through the backend callback. If your Kite app
+                  is still registered to the wrong redirect host and you landed on a dead page, copy
+                  the full URL from the address bar and paste it below. We&apos;ll extract the
+                  <code> request_token </code> and finish the login server-side.
+                </p>
+                <textarea
+                  value={pasteValue}
+                  onChange={e => setPasteValue(e.target.value)}
+                  placeholder="Paste the full URL or just the request_token…"
+                  rows={2}
+                  style={{
+                    width: "100%", padding: "8px 10px",
+                    border: "1px solid #FCD34D", borderRadius: "8px",
+                    fontSize: "12px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    color: "#1A1814", background: "#FFFFFF",
+                    resize: "vertical",
+                  }}
+                />
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <button
+                    onClick={submitPaste}
+                    disabled={pasting || !pasteValue.trim()}
+                    style={{
+                      background: "#16A34A", color: "#fff",
+                      border: "none", borderRadius: "8px",
+                      padding: "8px 14px", fontWeight: 700, fontSize: "12px",
+                      cursor: pasting ? "wait" : "pointer",
+                      opacity: pasting || !pasteValue.trim() ? 0.6 : 1,
+                    }}
+                  >
+                    {pasting ? "Exchanging…" : "Finish login"}
+                  </button>
+                  <a
+                    href="https://developers.kite.trade/apps/"
+                    target="_blank" rel="noreferrer"
+                    style={{ fontSize: "11px", color: "#92400E" }}
+                  >
+                    Or fix the redirect URL in your Kite app →
+                  </a>
+                </div>
+                {pasteErr && (
+                  <div style={{ color: "#B91C1C", fontSize: "12px" }}>
+                    {pasteErr}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Footer attribution */}
         <div style={{

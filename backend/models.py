@@ -44,6 +44,16 @@ class TradingContext(BaseModel):
     preferred_language: Language = Language.EN
     historical_sessions: int = 0         # From BehavioralDNA
     historical_loss_rate: float = 0.0   # From BehavioralDNA
+    source_mode: Literal["demo", "paper", "kite"] = "demo"
+    day_realized_pnl: Optional[float] = None
+    open_pnl: Optional[float] = None
+    open_positions_count: int = 0
+    holdings_count: int = 0
+    exposure_concentration: float = 0.0
+    inferred_loss_streak: int = 0
+    realized_pnl_source: Literal["exact", "derived", "unknown"] = "unknown"
+    open_pnl_source: Literal["exact", "derived", "unknown"] = "unknown"
+    analysis_notes: list[str] = Field(default_factory=list)
 
 class BehavioralAnalysis(BaseModel):
     behavioral_score: int = Field(ge=0, le=1000)

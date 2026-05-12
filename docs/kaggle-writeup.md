@@ -97,8 +97,9 @@ Gemma 4 made the technology accessible. Finsight OS makes the protection inevita
 - **Cover image**: `docs/cover-image.html` rendered to `cover.png` in Media Gallery
 - **Live demo**: deployed at the URL above (Vercel frontend + Modal-hosted backend, GPU-backed)
 - **Public code repo**: GitHub link above
-- **Voiceover script + Fiverr brief**: `docs/voiceover-brief.md`
-- **Video shot list**: `docs/video-script.md`
+- **Face-cam video script + shot list**: `docs/video-script.md`
+- **Teleprompter beats + recording setup**: `docs/talking-points.md`, `docs/recording-setup.md`
+- **Local-run guide**: `docs/run-locally.md`
 - **Fine-tune pipeline**: `finetune/` — runnable on free Kaggle T4
 - **GPU deployment recipes**: `docs/gpu-setup.md`
 - **Live Kite setup guide**: `docs/kite-setup.md`

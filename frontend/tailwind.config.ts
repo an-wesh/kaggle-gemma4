@@ -7,6 +7,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["Crimson Text", "Georgia", "serif"],
+        mono: ["JetBrains Mono", "Menlo", "Monaco", "monospace"],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
@@ -28,3 +33,4 @@ export default {
   },
   plugins: [],
 }
+

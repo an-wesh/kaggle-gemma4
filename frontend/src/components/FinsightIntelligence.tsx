@@ -5,6 +5,14 @@ interface Props {
   analysis: BehavioralAnalysis | null;
   loading: boolean;
   model?: string;     // e.g. "gemma4:e4b" — from /health
+  /** When false, the analysis pipeline is intentionally idle (e.g. Paper
+   *  mode with zero trades). Render an empty-state instead of the
+   *  loading skeleton so the user knows nothing is being analyzed. */
+  enabled?: boolean;
+  /** Mode-aware empty-state copy (set by Dashboard from the active theme). */
+  emptyTitle?: string;
+  emptyBody?: string;
+  emptyAccent?: string;
 }
 
 // Format the model id for display: "gemma4:e4b" → "Gemma 4 · e4b"
@@ -43,7 +51,13 @@ function Shimmer({ w = "100%", h = 12 }: { w?: string; h?: number }) {
   );
 }
 
-export function FinsightIntelligence({ analysis, loading, model }: Props) {
+export function FinsightIntelligence({
+  analysis, loading, model,
+  enabled = true,
+  emptyTitle  = "Awaiting your first trade",
+  emptyBody   = "The AI starts analyzing once you place a trade. Your dashboard will populate from there.",
+  emptyAccent = "#2563EB",
+}: Props) {
   const r     = analysis ? RISK[analysis.risk_level] : RISK.low;
   const score = analysis?.behavioral_score ?? 0;
   const pct   = (score / 1000) * 100;
@@ -137,6 +151,45 @@ export function FinsightIntelligence({ analysis, loading, model }: Props) {
       )}
     </div>
   );
+
+  // ── Disabled / empty state — Paper mode with no trades ─────────────────
+  if (!enabled && !analysis) {
+    return (
+      <div style={{
+        background: "#fff", borderRadius: "12px",
+        border: "1px solid #E8E5DF", overflow: "hidden",
+      }}>
+        {header}
+        <div style={{ padding: "28px 20px", textAlign: "center" }}>
+          <div style={{
+            width: "44px", height: "44px", borderRadius: "10px",
+            background: `${emptyAccent}15`, border: `1px solid ${emptyAccent}40`,
+            margin: "0 auto 12px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke={emptyAccent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8"  x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <div style={{
+            fontSize: "14px", fontWeight: "800", color: "#1A1814",
+            marginBottom: "6px",
+          }}>
+            {emptyTitle}
+          </div>
+          <p style={{
+            fontSize: "12px", color: "#6B6860", lineHeight: "1.6",
+            maxWidth: "260px", margin: "0 auto",
+          }}>
+            {emptyBody}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Loading skeleton ────────────────────────────────────────────────────
   if (!analysis) {
@@ -315,14 +368,23 @@ export function FinsightIntelligence({ analysis, loading, model }: Props) {
             }}>
               Commitment Phrase
             </div>
-            <p style={{ fontSize: "13px", color: "#991B1B", fontStyle: "italic", lineHeight: "1.6" }}>
+            <p className="behavioral-message" style={{ 
+              fontSize: "13px", 
+              fontStyle: "italic", 
+              lineHeight: "1.6",
+              color: "#991B1B",
+            }}>
               "{analysis.nudge_message}"
             </p>
             {analysis.nudge_message_local && (
-              <p style={{
-                fontSize: "12px", color: "#B91C1C",
-                marginTop: "6px", lineHeight: "1.6", opacity: 0.85,
-                borderTop: "1px solid #FECACA", paddingTop: "6px",
+              <p className="behavioral-message" style={{
+                fontSize: "12px", 
+                color: "#B91C1C",
+                marginTop: "6px", 
+                lineHeight: "1.6", 
+                opacity: 0.85,
+                borderTop: "1px solid #FECACA", 
+                paddingTop: "6px",
               }}>
                 {analysis.nudge_message_local}
               </p>

@@ -72,7 +72,7 @@ export function NudgeEngine({ analysis }: Props) {
           <p style={{ fontSize: "12px", fontWeight: "700", color: "#92400E", marginBottom: "3px" }}>
             Finsight Notice · Medium Risk
           </p>
-          <p style={{ fontSize: "12px", color: "#D97706", lineHeight: "1.5" }}>
+          <p className="behavioral-message" style={{ fontSize: "12px", lineHeight: "1.5" }}>
             {analysis.detected_pattern} pattern detected.
             Behavioral score: {analysis.behavioral_score}/1000.
           </p>
@@ -126,8 +126,8 @@ export function NudgeEngine({ analysis }: Props) {
           <span style={{ fontSize: "12px", fontWeight: "700", color: "#991B1B" }}>
             ⚠ High Risk Detected — {analysis.detected_pattern}
           </span>
-          <span style={{
-            fontSize: "12px", color: "#DC2626", marginLeft: "8px",
+          <span className="behavioral-message" style={{
+            fontSize: "12px", marginLeft: "8px",
             fontStyle: "italic",
           }}>
             "{analysis.nudge_message}"

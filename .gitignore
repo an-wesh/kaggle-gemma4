@@ -15,6 +15,9 @@ venv/
 env/
 backend/venv/
 backend/.venv/
+# Stray root-level venvs (backend uses backend/venv/ which is versioned)
+kaggle/venv/
+kaggle/.venv/
 
 # ── Node / Next.js ─────────────────────────────────────────────────────────
 node_modules/
@@ -24,6 +27,8 @@ dist/
 build/
 *.tsbuildinfo
 next-env.d.ts
+playwright-report/
+test-results/
 
 # ── Local databases (the demo seeder regenerates these on first run) ───────
 backend/data/*.db
@@ -65,6 +70,9 @@ logs/
 coverage/
 .coverage
 htmlcov/
+backend/tests/.tmp/
+backend/.pytest-tmp/
+backend/pytest-cache-files-*/
 
 # ── Video / media (kept out of repo, hosted on YouTube + media gallery) ────
 assets/raw/

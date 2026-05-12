@@ -32,8 +32,25 @@ from typing import Any
 
 from models import Trade, MarginData
 
-DB_PATH = Path("data/paper_trading.db")
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Two SQLite databases, one per non-Kite mode. Demo is auto-seeded with the
+# canonical high-risk session; Paper starts empty and the user builds it up.
+# Live Kite mode bypasses both — see kite_client.py.
+DB_DIR = Path("data")
+DB_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATHS = {
+    "demo":  DB_DIR / "paper_trading_demo.db",
+    "paper": DB_DIR / "paper_trading_user.db",
+}
+
+# Backward-compat alias (some callers still import DB_PATH directly).
+DB_PATH = DB_PATHS["demo"]
+
+
+def _db_path(mode: str = "demo") -> Path:
+    """Resolve the SQLite path for a given mode. Falls back to demo for safety."""
+    return DB_PATHS.get(mode, DB_PATHS["demo"])
+
 
 # SQLite is thread-safe per-connection but we serialize writes from FastAPI
 # worker threads via this lock to keep the matching logic atomic without
@@ -43,8 +60,8 @@ _write_lock = threading.Lock()
 
 # ── Schema ────────────────────────────────────────────────────────────────────
 
-def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as conn:
+def init_db(mode: str = "demo") -> None:
+    with sqlite3.connect(_db_path(mode)) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS paper_trades (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +105,7 @@ def record_trade(
     action: str,
     quantity: int,
     price: float,
+    mode: str = "demo",
 ) -> dict[str, Any]:
     """
     Persist a paper trade. If it closes any opposite open positions on the
@@ -103,11 +121,11 @@ def record_trade(
     if quantity <= 0 or price <= 0:
         raise ValueError(f"quantity and price must be positive (got {quantity}, {price})")
 
-    init_db()
+    init_db(mode)
     now_iso = datetime.now(timezone.utc).isoformat()
     opposite = "SELL" if action == "BUY" else "BUY"
 
-    with _write_lock, sqlite3.connect(DB_PATH) as conn:
+    with _write_lock, sqlite3.connect(_db_path(mode)) as conn:
         conn.row_factory = sqlite3.Row
         order_id = _next_order_id(conn)
 
@@ -197,10 +215,10 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def get_recent_trades(limit: int = 20) -> list[dict[str, Any]]:
+def get_recent_trades(limit: int = 20, mode: str = "demo") -> list[dict[str, Any]]:
     """Most-recent-first list for the 'Today's Trades' panel."""
-    init_db()
-    with sqlite3.connect(DB_PATH) as conn:
+    init_db(mode)
+    with sqlite3.connect(_db_path(mode)) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT * FROM paper_trades ORDER BY timestamp DESC LIMIT ?",
@@ -209,10 +227,10 @@ def get_recent_trades(limit: int = 20) -> list[dict[str, Any]]:
     return [_row_to_dict(r) for r in rows]
 
 
-def get_open_positions() -> list[dict[str, Any]]:
+def get_open_positions(mode: str = "demo") -> list[dict[str, Any]]:
     """Aggregated open quantity per symbol, weighted-average entry price."""
-    init_db()
-    with sqlite3.connect(DB_PATH) as conn:
+    init_db(mode)
+    with sqlite3.connect(_db_path(mode)) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -236,14 +254,14 @@ def get_open_positions() -> list[dict[str, Any]]:
     ]
 
 
-def get_session_pnl(since: datetime | None = None) -> dict[str, Any]:
+def get_session_pnl(since: datetime | None = None, mode: str = "demo") -> dict[str, Any]:
     """Realized P&L since `since` (default: start of UTC today)."""
-    init_db()
+    init_db(mode)
     if since is None:
         now = datetime.now(timezone.utc)
         since = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(_db_path(mode)) as conn:
         conn.row_factory = sqlite3.Row
         agg = conn.execute(
             """
@@ -268,7 +286,7 @@ def get_session_pnl(since: datetime | None = None) -> dict[str, Any]:
     }
 
 
-def get_session_trades_for_ai(since_minutes: int = 240) -> list[Trade]:
+def get_session_trades_for_ai(since_minutes: int = 240, mode: str = "demo") -> list[Trade]:
     """
     Recent CLOSED legs shaped as pydantic Trade for the Gemma prompt.
 
@@ -280,10 +298,10 @@ def get_session_trades_for_ai(since_minutes: int = 240) -> list[Trade]:
 
     Ordering: oldest first (matches how broker_client built mock context).
     """
-    init_db()
+    init_db(mode)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(_db_path(mode)) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
             """
@@ -314,7 +332,7 @@ def get_session_trades_for_ai(since_minutes: int = 240) -> list[Trade]:
 
 # ── Margin derivation from open positions ─────────────────────────────────────
 
-def compute_margin(total: float = 100_000.0) -> MarginData:
+def compute_margin(total: float = 100_000.0, mode: str = "demo") -> MarginData:
     """
     Derive a MarginData snapshot from the current open paper positions.
 
@@ -322,8 +340,8 @@ def compute_margin(total: float = 100_000.0) -> MarginData:
     is treated symmetrically — both lock up capital in a paper account.
     `total` is the user's notional capital ceiling (₹100K default).
     """
-    init_db()
-    with sqlite3.connect(DB_PATH) as conn:
+    init_db(mode)
+    with sqlite3.connect(_db_path(mode)) as conn:
         used = conn.execute(
             """
             SELECT COALESCE(SUM(quantity_remaining * price), 0)
@@ -345,11 +363,24 @@ def compute_margin(total: float = 100_000.0) -> MarginData:
 
 # ── Demo session seeding ──────────────────────────────────────────────────────
 
-def has_session_trades(within_minutes: int = 1440) -> bool:
+def reset_db(mode: str = "paper") -> dict[str, Any]:
+    """
+    Wipe ALL trades from the given mode's database. Used by /paper/reset.
+    Default mode is "paper" because we don't want accidental demo wipes.
+    """
+    path = _db_path(mode)
+    with _write_lock:
+        if path.exists():
+            path.unlink()
+        init_db(mode)
+    return {"reset": True, "mode": mode, "path": str(path)}
+
+
+def has_session_trades(within_minutes: int = 1440, mode: str = "demo") -> bool:
     """True if any paper_trades row falls inside the lookback window."""
-    init_db()
+    init_db(mode)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(_db_path(mode)) as conn:
         n = conn.execute(
             "SELECT COUNT(*) FROM paper_trades WHERE timestamp >= ?",
             (cutoff.isoformat(),),
@@ -377,21 +408,21 @@ _DEMO_SESSION: list[tuple[str, str, int, float, float | None, int]] = [
 ]
 
 
-def seed_demo_trades() -> dict[str, int]:
+def seed_demo_trades(mode: str = "demo") -> dict[str, int]:
     """
     Populate paper_trades with a realistic high-risk demo session if no
     trades exist in the last 24 hours. Idempotent — safe to call repeatedly.
 
     Returns a summary of what was inserted (or skipped).
     """
-    if has_session_trades():
+    if has_session_trades(mode=mode):
         return {"inserted": 0, "skipped": True}
 
-    init_db()
+    init_db(mode)
     now = datetime.now(timezone.utc)
     inserted = 0
 
-    with _write_lock, sqlite3.connect(DB_PATH) as conn:
+    with _write_lock, sqlite3.connect(_db_path(mode)) as conn:
         for symbol, side, qty, entry_price, exit_price, mins_ago in _DEMO_SESSION:
             entry_ts = (now - timedelta(minutes=mins_ago)).isoformat()
             entry_id = _next_order_id(conn)

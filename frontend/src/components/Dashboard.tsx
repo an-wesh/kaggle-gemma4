@@ -1,6 +1,9 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStreamingAnalysis } from "@/hooks/useStreamingAnalysis";
+import { useMode } from "@/contexts/ModeContext";
+import { themeFor } from "@/lib/modeTheme";
+import { ModeBanner } from "./ModeBanner";
 import { FinsightIntelligence } from "./FinsightIntelligence";
 import { NudgeEngine } from "./NudgeEngine";
 import { TradePanel } from "./TradePanel";
@@ -10,10 +13,12 @@ import { ThinkingLog } from "./ThinkingLog";
 import { ChartAnalyzer } from "./ChartAnalyzer";
 import { CrisisSupport } from "./CrisisSupport";
 import { LanguageSelector } from "./LanguageSelector";
+import { KiteAccountPanel } from "./KiteAccountPanel";
+import { StockSearch } from "./StockSearch";
 import { api } from "@/lib/api";
 import type {
   Language, MarketSnapshot, MarketState,
-  PaperTrade, SessionPnL, OpenPosition,
+  PaperTrade, SessionPnL, OpenPosition, KiteAccountSnapshot, KiteStatus,
 } from "@/types";
 
 // ── NSE watchlist symbols (display order) ─────────────────────────────────
@@ -26,7 +31,6 @@ const BASE_INSTRUMENTS = [
   { sym: "INFY",       base: 1847.60  },
   { sym: "TCS",        base: 4102.50  },
   { sym: "HDFCBANK",   base: 1782.90  },
-  { sym: "TATAMOTORS", base: 984.20   },
 ];
 
 type TickerRow = {
@@ -93,7 +97,9 @@ function fmtTime(iso: string): string {
 }
 
 export function Dashboard() {
-  const { analysis, loading, refresh, streamingText, streaming, status: streamStatus } = useStreamingAnalysis(30_000);
+  const { mode, resetMode } = useMode();
+  const theme = themeFor(mode);
+  const [tradesCount, setTradesCount] = useState(0);
   const [language, setLanguage]         = useState<Language>("en");
   const [crisisDismissed, setCrisis]    = useState(false);
   const [chartInsight, setChartInsight] = useState<string | null>(null);
@@ -111,6 +117,53 @@ export function Dashboard() {
   const [marginUsedPct, setMarginUsedPct] = useState(0);
   const [marginUsed, setMarginUsed]     = useState(0);
   const [marginAvailable, setMarginAvailable] = useState(100_000);
+  // Hydrate from sessionStorage if the /kite/callback page just primed an
+  // authenticated KiteStatus — avoids a "Reconnect" flash right after login.
+  const [kiteStatus, setKiteStatus]     = useState<KiteStatus | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem("finsight.kiteStatus.primed.v1");
+      if (!raw) return null;
+      sessionStorage.removeItem("finsight.kiteStatus.primed.v1");
+      return JSON.parse(raw) as KiteStatus;
+    } catch {
+      return null;
+    }
+  });
+  const [kiteSnapshot, setKiteSnapshot] = useState<KiteAccountSnapshot | null>(null);
+  const [kiteLoading, setKiteLoading]   = useState(false);
+  const [kiteError, setKiteError]       = useState<string | null>(null);
+
+  const kiteAuthenticated = mode !== "kite" ? true : !!kiteStatus?.authenticated;
+  // Three distinct kite-mode states for empty-state copy:
+  //   1. kiteStatus === null  → still probing /health (initial mount or after redirect)
+  //   2. kiteStatus !== null && !authenticated → real reauth needed
+  //   3. kiteStatus authenticated → analysis can run; snapshot fetch happens in parallel
+  const kiteProbing = mode === "kite" && kiteStatus === null;
+  const analysisEnabled = mode === "paper"
+    ? tradesCount > 0
+    : mode === "kite"
+      // Critical: do NOT block on `kiteLoading` (the account-snapshot fetch).
+      // The analysis stream is independent of the snapshot — gating on the
+      // snapshot fetch caused the "Reconnect your Kite session" empty state
+      // to flash right after a successful login.
+      ? kiteAuthenticated
+      : true;
+  // Context hash — only re-execute Gemma when something *meaningful* changes
+  // (mode flip, trade count delta, kite session id, watchlist size, margin
+  // usage bucket). Tiny price ticks and unrelated UI rerenders are excluded.
+  // useStreamingAnalysis debounces re-runs by 600ms inside.
+  const contextHash = `${mode}|${kiteAuthenticated ? "auth" : "noauth"}|${tradesCount}|${positions.length}|${Math.round(marginUsedPct / 10)}`;
+  const { analysis, loading, refresh, streamingText, streaming, status: streamStatus } =
+    useStreamingAnalysis({
+      enabled: analysisEnabled,
+      contextHash,
+      // No polling. The contextHash effect re-runs Gemma *only* when the
+      // trading context actually changes (new trade, mode flip, margin
+      // jumps a bucket). Idle dashboards never burn 20s of CPU on the
+      // local Gemma loop just to re-confirm "Healthy Trading · 0".
+      // pollIntervalMs intentionally omitted.
+    });
 
   // Server-reported model name (e.g. "gemma4:e4b") — drives the header badge.
   const [model, setModel]   = useState<string>("");
@@ -119,6 +172,7 @@ export function Dashboard() {
     api.health().then(h => {
       setModel(h.model);
       setDemo(h.demo_mode);
+      setKiteStatus(h.kite);
     }).catch(() => { /* offline — keep defaults */ });
   }, []);
 
@@ -166,17 +220,67 @@ export function Dashboard() {
   // ── Real paper-trading session: history + portfolio ───────────────────
   // Polls every 15s. Also refreshed manually via the header refresh button so
   // a freshly placed trade shows up immediately without waiting for the tick.
+  const kiteLoadedOnceRef = useRef(false);
   const fetchSession = useCallback(async () => {
+    if (mode === "kite") {
+      // Only flip kiteLoading=true on the FIRST fetch (no snapshot yet).
+      // Background polls keep the UI stable and only mutate state if the
+      // new snapshot actually differs — no more flashing every cycle.
+      if (!kiteLoadedOnceRef.current) setKiteLoading(true);
+      try {
+        const snapshot = await api.kiteAccountSnapshot();
+        kiteLoadedOnceRef.current = true;
+        // Skip identical payloads — avoids causing a re-render storm + the
+        // contextHash thrash that re-triggered the analyze stream every poll.
+        setKiteSnapshot(prev =>
+          prev && JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot
+        );
+        setKiteError(null);
+        setKiteStatus(prev => ({ ...(prev ?? { configured: true, authenticated: true }), authenticated: true }));
+        setTrades(snapshot.trades);
+        setTradesCount(snapshot.summary.total_trades);
+        setSessionPnl(snapshot.summary);
+        setPositions(snapshot.positions);
+        setMarginUsed(snapshot.margins.used);
+        setMarginAvailable(snapshot.margins.available);
+        setMarginUsedPct(Math.round((snapshot.margins.used / Math.max(snapshot.margins.total, 1)) * 100));
+        return;
+      } catch (err: any) {
+        const message = err?.message || "Could not reach Zerodha. Log in again to refresh the live session.";
+        setKiteSnapshot(null);
+        setKiteError(message);
+        setTrades([]);
+        setTradesCount(0);
+        setSessionPnl(null);
+        setPositions([]);
+        setMarginUsed(0);
+        setMarginAvailable(0);
+        setMarginUsedPct(0);
+        if (typeof message === "string" && message.includes("/kite/account-snapshot: 401")) {
+          setKiteStatus(prev => ({
+            ...(prev ?? { configured: true }),
+            authenticated: false,
+          }));
+        }
+        console.error("kite snapshot fetch failed:", err);
+        return;
+      } finally {
+        setKiteLoading(false);
+      }
+    }
+
+    setKiteSnapshot(null);
+    setKiteError(null);
     try {
       const [hist, pf] = await Promise.all([
         api.getTradeHistory(20),
         api.getPortfolio(),
       ]);
       setTrades(hist.trades);
+      setTradesCount(hist.trades.length);
       setSessionPnl(hist.session_pnl);
       setPositions(pf.positions);
 
-      // Derive margin display from portfolio response.
       const used = pf.positions.reduce(
         (s, p) => s + p.quantity * p.avg_price, 0,
       );
@@ -188,7 +292,7 @@ export function Dashboard() {
     } catch (err) {
       console.error("session fetch failed:", err);
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     fetchSession();
@@ -226,6 +330,7 @@ export function Dashboard() {
     color: "#1A1814",
     textTransform: "uppercase",
     letterSpacing: "0.07em",
+    fontFamily: "var(--font-sans)",
   };
 
   return (
@@ -280,8 +385,30 @@ export function Dashboard() {
             </div>
           </div>
 
+          {/* Clickable mode pill — opens the mode selector again.
+              Color & label come from the active mode's theme. */}
+          <button
+            onClick={resetMode}
+            title="Switch deployment mode (Demo / Paper / Live Kite)"
+            style={{
+              fontSize: "10px", fontWeight: "700", color: theme.accentText,
+              background: theme.accentBg, border: `1px solid ${theme.accentBorder}`,
+              borderRadius: "99px", padding: "3px 10px",
+              cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "5px",
+              fontFamily: "inherit",
+              transition: "background 0.15s, transform 0.1s",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.filter = "brightness(0.96)")}
+            onMouseLeave={e => (e.currentTarget.style.filter = "none")}
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            {theme.pillLabel}
+          </button>
+
           {[
-            demoMode ? "DEMO" : "LIVE",
             model || "gemma-4",
             "edge-ai",
           ].map(badge => (
@@ -297,7 +424,11 @@ export function Dashboard() {
 
         {/* Controls */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <LanguageSelector selected={language} onChange={setLanguage} />
+          <LanguageSelector
+            selected={language}
+            onChange={setLanguage}
+            onLanguageChanged={refresh}
+          />
 
           <button
             onClick={handleRefresh}
@@ -320,6 +451,9 @@ export function Dashboard() {
           </button>
         </div>
       </header>
+
+      {/* ── Mode banner — color/copy driven by current mode's theme ─────── */}
+      <ModeBanner />
 
       {/* ── Two-column layout ────────────────────────────────────────────── */}
       <main style={{
@@ -372,9 +506,8 @@ export function Dashboard() {
                       {s.sym}
                     </span>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{
-                        fontSize: "14px", fontWeight: "700", color: "#1A1814",
-                        fontVariantNumeric: "tabular-nums", fontFamily: "'DM Mono', monospace",
+                      <div className="price-display" style={{
+                        fontSize: "14px",
                       }}>
                         ₹{fmtPrice(s.price)}
                       </div>
@@ -409,8 +542,50 @@ export function Dashboard() {
             </div>
           )}
 
-          {/* ── Trade Panel ───────────────────────────────────────────────── */}
-          <TradePanel analysis={analysis} onTradeExecuted={fetchSession} />
+          {/* ── Live Zerodha account snapshot (kite mode only) ───────────── */}
+          {mode === "kite" && (
+            <>
+              {/* Daily IST re-auth banner — surfaces stale_today / not_today
+                  warnings the backend attaches to /kite/status so the user
+                  knows to reconnect once per trading day. */}
+              {kiteStatus?.warning && (
+                <div style={{
+                  padding: "12px 16px", borderRadius: 10,
+                  background: "#FFFBEB", border: "1px solid #FDE68A",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: 12,
+                }}>
+                  <div style={{ fontSize: 12, color: "#7C5E10", lineHeight: 1.55 }}>
+                    {kiteStatus.warning}
+                  </div>
+                  <button
+                    onClick={() => api.kiteLoginUrl()
+                      .then(r => { window.location.href = r.login_url; })
+                      .catch(e => console.error("login-url failed:", e))}
+                    style={{
+                      background: "#16A34A", color: "#fff",
+                      border: "none", borderRadius: 8,
+                      padding: "8px 12px", fontSize: 12, fontWeight: 800,
+                      cursor: "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    Reconnect Kite
+                  </button>
+                </div>
+              )}
+
+              <KiteAccountPanel
+                snapshot={kiteSnapshot}
+                loading={kiteLoading}
+                error={kiteError}
+              />
+
+              {/* Stock search + real-order placement (Kite mode only). The
+                  watchlist persists to localStorage; orders fire after the
+                  Mindful Speed Bump inside the order modal. */}
+              <StockSearch onAfterOrder={fetchSession} />
+            </>
+          )}
 
           {/* ── Recent Trades (real, from /trade-history) ─────────────────── */}
           {(() => {
@@ -434,9 +609,24 @@ export function Dashboard() {
                 </div>
 
                 {trades.length === 0 ? (
-                  <div style={{ padding: "16px", color: "#9B9890", fontSize: "12px",
-                    textAlign: "center" }}>
-                    No trades yet — place an order to see them here.
+                  <div style={{ padding: "20px 16px", textAlign: "center" }}>
+                    <div style={{
+                      fontSize: "13px", fontWeight: "700", color: theme.accentText,
+                      marginBottom: "4px",
+                    }}>
+                      {mode === "paper"
+                        ? "Your paper account is empty"
+                        : mode === "kite" && kiteError
+                          ? "Reconnect your Kite session"
+                          : "No trades yet"}
+                    </div>
+                    <div style={{ color: "#9B9890", fontSize: "12px", lineHeight: "1.5" }}>
+                      {mode === "paper"
+                        ? "Place your first BUY in the panel below. The AI will start watching for emotional patterns once you have 2+ trades."
+                        : mode === "kite" && kiteError
+                          ? "Your live session needs to be refreshed before trades and analysis can load."
+                          : "Place an order to see it here."}
+                    </div>
                   </div>
                 ) : (
                   trades.map((t, i) => {
@@ -488,15 +678,49 @@ export function Dashboard() {
                   })
                 )}
 
-                {/* Footer: closed/open count for transparency */}
+                {/* Footer: closed/open count + mode-aware caption + Reset button (paper only) */}
                 {trades.length > 0 && (
                   <div style={{
                     padding: "8px 16px", borderTop: "1px solid #F5F4F0",
                     fontSize: "10px", color: "#9B9890", display: "flex",
-                    justifyContent: "space-between",
+                    justifyContent: "space-between", alignItems: "center",
                   }}>
                     <span>{closedTrades.length} closed · {openTrades.length} open</span>
-                    <span>real paper trades · SQLite</span>
+                    <span>{theme.tradesFooter}</span>
+                  </div>
+                )}
+                {theme.showResetButton && trades.length > 0 && (
+                  <div style={{
+                    padding: "10px 16px", borderTop: "1px solid #F5F4F0",
+                    background: "#F9F8F6",
+                  }}>
+                    <button
+                      onClick={async () => {
+                        if (!confirm("Reset your paper trading account? All trades and ₹100,000 paper capital will start fresh.")) return;
+                        try {
+                          await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/paper/reset`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "X-Finsight-Mode": "paper" },
+                            credentials: "include",
+                            body: "{}",
+                          });
+                          await fetchSession();
+                          await refresh();
+                        } catch (e) {
+                          console.error("paper reset failed:", e);
+                        }
+                      }}
+                      style={{
+                        width: "100%", padding: "6px 10px", borderRadius: "6px",
+                        border: "1px solid #E8E5DF", background: "#fff",
+                        fontSize: "11px", fontWeight: "600", color: "#6B6860",
+                        cursor: "pointer", fontFamily: "inherit",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "#FEF2F2")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "#fff")}
+                    >
+                      ↻ Reset Paper Account · ₹100K fresh start
+                    </button>
                   </div>
                 )}
               </div>
@@ -516,10 +740,32 @@ export function Dashboard() {
 
         {/* ── RIGHT SIDEBAR ────────────────────────────────────────────────── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <FinsightIntelligence analysis={analysis} loading={loading} model={model} />
+          <FinsightIntelligence
+            analysis={analysis} loading={loading} model={model}
+            enabled={analysisEnabled}
+            emptyTitle={
+              mode === "paper"
+                ? "Awaiting your first trade"
+                : mode === "kite"
+                  ? (kiteProbing
+                      ? "Connecting to Zerodha…"
+                      : "Reconnect your Kite session")
+                  : "No analysis available"
+            }
+            emptyBody={
+              mode === "paper"
+                ? "The AI starts analyzing once you place a trade. Behavioral score, pattern detection, and the Mindful Speed Bump activate from your second trade onward."
+                : mode === "kite"
+                  ? (kiteProbing
+                      ? "Verifying your live session — your dashboard will populate as soon as the broker check returns."
+                      : "Your Zerodha session is no longer active. Use the Reconnect Kite button above to log in again.")
+                  : "The AI hasn't analyzed this session yet."
+            }
+            emptyAccent={theme.accent}
+          />
           <BehavioralDNA />
 
-          {/* Margin usage — derived from real open paper positions */}
+          {/* Margin usage — paper from SQLite, live Kite from broker snapshot */}
           {(() => {
             const isHigh = marginUsedPct > 70;
             const isMed  = marginUsedPct > 40 && marginUsedPct <= 70;
@@ -537,7 +783,7 @@ export function Dashboard() {
                 <div style={{ padding: "14px 16px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between",
                     alignItems: "center", marginBottom: "10px" }}>
-                    <span style={sectionLabel}>Margin Usage</span>
+                    <span style={sectionLabel}>{theme.marginLabel}</span>
                     <span style={{
                       fontSize: "11px", fontWeight: "700", color: badgeColor,
                       background: badgeBg, padding: "2px 8px",
@@ -564,13 +810,15 @@ export function Dashboard() {
                       borderTop: "1px solid #F5F4F0",
                       fontSize: "10px", color: "#9B9890",
                     }}>
-                      {positions.length} open position{positions.length !== 1 ? "s" : ""} · derived from SQLite
+                      {positions.length} open position{positions.length !== 1 ? "s" : ""} · {mode === "kite" ? "live from Zerodha" : "derived from SQLite"}
                     </div>
                   )}
                 </div>
               </div>
             );
           })()}
+
+          <TradePanel analysis={analysis} onTradeExecuted={fetchSession} />
 
           <TradingVows />
 

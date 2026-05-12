@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BehavioralAnalysis } from "@/types";
+import { useThinkingLog } from "@/hooks/useThinkingLog";
 
 interface Props {
   log: string | null;
@@ -453,6 +454,9 @@ export function ThinkingLog({
             );
           })}
 
+          {/* Run history — persistent across reloads, append-only */}
+          <PersistentRunHistory />
+
           {/* Footer note */}
           <div style={{
             marginTop: "8px",
@@ -464,6 +468,89 @@ export function ThinkingLog({
               🔒 This reasoning ran entirely on your device — no cloud, no surveillance
             </p>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Persistent run history ───────────────────────────────────────────────────
+// Reads from the global thinkingLog store. Survives component unmount, page
+// reload, mode switches — anything short of an explicit clear. Groups entries
+// by runId so the user can scroll back through every analysis Gemma has ever
+// produced for this account.
+
+function PersistentRunHistory() {
+  const { entries, clear } = useThinkingLog();
+  const [open, setOpen] = useState(false);
+
+  const runs = useMemo(() => {
+    const byRun = new Map<string, typeof entries>();
+    for (const e of entries) {
+      const key = e.runId || "_unscoped";
+      if (!byRun.has(key)) byRun.set(key, []);
+      byRun.get(key)!.push(e);
+    }
+    // Newest run first
+    return Array.from(byRun.entries()).reverse();
+  }, [entries]);
+
+  if (runs.length <= 1) return null;   // nothing useful to show yet
+
+  return (
+    <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid #E8E5DF" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button
+          onClick={() => setOpen(v => !v)}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: "11px", fontWeight: 700, color: "#6B6860",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {open ? "▾" : "▸"}  PREVIOUS RUNS · {runs.length}
+        </button>
+        {open && (
+          <button
+            onClick={() => { if (confirm("Clear all stored reasoning logs?")) clear(); }}
+            style={{
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontSize: "10px", color: "#DC2626", fontWeight: 700,
+            }}
+          >Clear history</button>
+        )}
+      </div>
+
+      {open && (
+        <div style={{
+          marginTop: 8, maxHeight: 280, overflowY: "auto",
+          background: "#FAFAF8", border: "1px solid #E8E5DF", borderRadius: 8,
+          padding: "8px 10px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 11, color: "#3F3D38", lineHeight: 1.5,
+        }}>
+          {runs.map(([runId, runEntries]) => {
+            const head = runEntries[0];
+            return (
+              <details key={runId} style={{ marginBottom: 6 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, color: "#1A1814" }}>
+                  {new Date(head.ts).toLocaleTimeString()} · {head.mode?.toUpperCase()} ·
+                  {" "}{runEntries.length} events
+                </summary>
+                {runEntries.map(e => (
+                  <div key={e.id} style={{
+                    paddingLeft: 12,
+                    color: e.kind === "error"  ? "#DC2626"
+                        : e.kind === "result" ? "#15803D"
+                        : e.kind === "status" ? "#6B6860"
+                        : "#3F3D38",
+                  }}>
+                    {e.kind === "token" ? e.text : `[${e.kind}] ${e.text}`}
+                  </div>
+                ))}
+              </details>
+            );
+          })}
         </div>
       )}
     </div>

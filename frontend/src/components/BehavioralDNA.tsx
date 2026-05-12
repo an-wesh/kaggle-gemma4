@@ -2,13 +2,18 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { BehavioralDNA as BDNA } from "@/types";
+import { useMode } from "@/contexts/ModeContext";
 
 export function BehavioralDNA() {
   const [dna, setDNA] = useState<BDNA | null>(null);
+  const { mode } = useMode();
 
+  // Refetch when the user switches mode — each mode has its own DNA history,
+  // so demo, paper, and live Kite sessions stay separated.
   useEffect(() => {
+    setDNA(null);                                    // clear stale demo data
     api.getDNA().then(setDNA).catch(console.error);
-  }, []);
+  }, [mode]);
 
   const sectionLabel: React.CSSProperties = {
     fontSize: "11px", fontWeight: "700", color: "#1A1814",

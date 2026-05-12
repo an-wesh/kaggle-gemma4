@@ -97,13 +97,15 @@ Open [`docs/architecture.html`](docs/architecture.html) in any browser for the f
 
 | Doc | Purpose |
 |---|---|
+| [`docs/run-locally.md`](docs/run-locally.md) | End-to-end local setup (backend + frontend + Kite + troubleshooting) |
 | [`docs/kaggle-writeup.md`](docs/kaggle-writeup.md) | Kaggle submission writeup (1500 words) |
 | [`docs/architecture.html`](docs/architecture.html) | System architecture diagram (open in browser) |
 | [`docs/cover-image.html`](docs/cover-image.html) | 1280×720 submission cover image |
 | [`docs/kite-setup.md`](docs/kite-setup.md) | 5-minute Live Kite Connect walkthrough |
 | [`docs/gpu-setup.md`](docs/gpu-setup.md) | Cloud GPU deployment recipes (Kaggle / RunPod / Modal / Colab) |
-| [`docs/voiceover-brief.md`](docs/voiceover-brief.md) | Video voiceover script + Fiverr brief |
-| [`docs/video-script.md`](docs/video-script.md) | 3-minute video shot list with timing |
+| [`docs/video-script.md`](docs/video-script.md) | 3-minute face-cam + screen-recording shot list |
+| [`docs/recording-setup.md`](docs/recording-setup.md) | Equipment + lighting + audio for the face-cam demo |
+| [`docs/talking-points.md`](docs/talking-points.md) | Teleprompter beats for the face-cam delivery |
 | [`docs/references.md`](docs/references.md) | Behavioral finance + SEBI bibliography |
 | [`docs/finetune-results.md`](docs/finetune-results.md) | Fine-tune benchmark table (base vs. LoRA) |
 | [`finetune/README.md`](finetune/README.md) | LoRA training pipeline overview |
