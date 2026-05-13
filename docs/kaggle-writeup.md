@@ -3,7 +3,7 @@
 ## A privacy-first behavioral guardian for India's 9.6 million retail F&O traders, built on Gemma 4
 
 > **Track:** Digital Equity & Inclusivity (primary) · Safety & Trust (secondary)
-> **Live demo:** https://finsight-os.app · **Code:** https://github.com/anweshmohanty/finsight-os
+> **Live demo:** https://your-vercel-app.vercel.app · **Code:** https://github.com/an-wesh/kaggle-gemma4
 > **Video:** https://youtu.be/[VIDEO_ID]
 
 ---
@@ -40,7 +40,7 @@ Finsight OS is a Next.js 14 frontend, a FastAPI backend, and seven local engines
 
 ## Seven Gemma 4 features in use
 
-**Thinking Mode.** The analysis prompt drives a 7-step reasoning chain — vow check → pattern → score rubric → nudge → language → crisis → SEBI grounding. The reasoning chain streams to the UI token-by-token via Server-Sent Events; each step is clickable to drill into its evidence (the violated vow text, the score breakdown, the SEBI source citation).
+**Thinking Mode.** The analysis prompt drives a 7-step reasoning chain — vow check → pattern → score rubric → nudge → language → stress → SEBI grounding. The reasoning chain streams to the UI token-by-token via Server-Sent Events; each step is clickable to drill into its evidence (the violated vow text, the score breakdown, the SEBI source citation).
 
 **Multimodal Vision.** The Chart Analyzer accepts a screenshot of the user's chart workspace. Gemma 4's vision modality reads it and returns a one-sentence behavioral warning. Demonstrates the model seeing the same screen the trader sees.
 
@@ -56,7 +56,7 @@ Finsight OS is a Next.js 14 frontend, a FastAPI backend, and seven local engines
 
 ## Engineering challenges and solutions
 
-**CPU-only inference budget.** The default development hardware is a four-year-old ThinkBook with an i7-1255U and 16 GB RAM. Real Gemma 4 E4B inference at our prompt complexity exceeds 90 seconds on this hardware. We compress the prompt ~30%, slim the JSON schema, pre-warm the model on FastAPI startup (saves the 25-40s weight-loading cold start), and provide a representative demo response that fires when the timeout is exceeded. The full inference pipeline — prompt construction, Ollama call, JSON parsing, RAG enrichment, behavioral DNA write, streaming SSE delivery — is real and runs on every request; only the model output itself stubs to the demo response when the timeout fires on this CPU. **Every Ollama option is overridable via environment variable** (`OLLAMA_NUM_GPU=99`, `OLLAMA_NUM_CTX=2048`, `OLLAMA_KEEP_ALIVE=30m`); on any GPU instance — including a free Kaggle T4 — real Gemma reasoning is visible immediately. See `docs/gpu-setup.md` for one-command deployment recipes for Kaggle, RunPod, Modal, and Colab.
+**CPU-only inference budget.** The default development hardware is a four-year-old ThinkBook with an i7-1255U and 16 GB RAM. Real Gemma 4 E4B inference at our prompt complexity can exceed 90 seconds on this hardware, so the submitted app defaults to `gemma4:e2b`, compresses the prompt, widens context only when needed, and pre-warms the model on FastAPI startup. The full inference pipeline — prompt construction, Ollama call, JSON parsing, RAG enrichment, behavioral DNA write, streaming SSE delivery — is real and runs on every request. If Gemma times out or returns invalid JSON, the UI shows an explicit "Gemma unavailable" state instead of a fake behavioral score, pattern, or nudge. **Every Ollama option is overridable via environment variable** (`OLLAMA_NUM_GPU=99`, `OLLAMA_NUM_CTX=2048`, `OLLAMA_KEEP_ALIVE=30m`); on any GPU instance — including a free Kaggle T4 — real Gemma reasoning is visible immediately. See `docs/gpu-setup.md` for one-command deployment recipes for Kaggle, RunPod, Modal, and Colab.
 
 **Live Kite Connect OAuth.** Live mode follows Zerodha's redirect-based auth: backend exposes `/kite/login-url`, user is redirected to `kite.zerodha.com`, returns to `/kite/callback` with a single-use `request_token`, the backend exchanges it for a daily-expiry `access_token` stored in an HTTP-only `SameSite=Lax` cookie. Rate-limited at the 3 req/s ceiling per Kite TOS via an asyncio semaphore plus 333 ms inter-call spacing. The same `/portfolio`, `/trade-history`, `/confirm-trade` endpoints serve all three modes via an `X-Finsight-Mode` header dispatcher.
 
@@ -95,7 +95,7 @@ Gemma 4 made the technology accessible. Finsight OS makes the protection inevita
 
 - **Architecture diagram**: `docs/architecture.html` (also in Media Gallery as PNG)
 - **Cover image**: `docs/cover-image.html` rendered to `cover.png` in Media Gallery
-- **Live demo**: deployed at the URL above (Vercel frontend + Modal-hosted backend, GPU-backed)
+- **Live demo**: deployed at the URL above (Vercel frontend + Railway backend). For real Gemma reasoning on hosted infrastructure, Railway must reach an Ollama/GPU runtime; otherwise judges can run the local Ollama path documented in `docs/deploy.md`.
 - **Public code repo**: GitHub link above
 - **Face-cam video script + shot list**: `docs/video-script.md`
 - **Teleprompter beats + recording setup**: `docs/talking-points.md`, `docs/recording-setup.md`

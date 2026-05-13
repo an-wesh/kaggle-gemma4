@@ -8,7 +8,7 @@
 
 ## Path A — 30 seconds: hosted live demo
 
-Open: **https://finsight-os.vercel.app**
+Open: **https://your-vercel-app.vercel.app**
 
 You'll see a mode picker. Click **Demo Mode** → you land on the dashboard
 with a high-risk session pre-loaded → click **BUY** on any instrument →
@@ -16,14 +16,16 @@ the **Mindful Speed Bump** modal fires with a countdown ring, a 15-word
 commitment phrase, and a typing input. That's the core mechanic in 30
 seconds.
 
-What's running behind the URL: Next.js on Vercel, FastAPI + Gemma 4 E2B
-on Modal A10G GPU. Real Gemma inference completes in ~5-8 seconds. Real
-NSE prices from Yahoo. Real SQLite paper-trading engine.
+What's running behind the URL: Next.js on Vercel and FastAPI on Railway.
+Real NSE prices come from Yahoo and paper trades persist through SQLite. If
+the Railway backend can reach an Ollama/Gemma runtime, the Thinking Log shows
+real Gemma inference; otherwise the UI shows an explicit "Gemma unavailable"
+state rather than fake insight.
 
 If you want to verify the integration with a real Zerodha account, follow
 **Path C** below — the live demo intentionally does not expose Live Kite
-Connect because the redirect URL is registered to localhost only (per
-Zerodha's API TOS).
+Connect unless the Railway backend has the judge's Kite API key/secret and the
+Kite app redirect URL is set to the Railway `/kite/callback` URL.
 
 ---
 
@@ -32,8 +34,8 @@ Zerodha's API TOS).
 If you have Docker Desktop or Docker Engine installed:
 
 ```bash
-git clone https://github.com/anweshmohanty/finsight-os.git
-cd finsight-os
+git clone https://github.com/an-wesh/kaggle-gemma4.git
+cd kaggle-gemma4
 cp backend/.env.example backend/.env
 docker compose up
 ```
@@ -45,8 +47,8 @@ What you get vs. Path A:
 - Same three modes (Demo / Paper Trading / Live Kite Connect)
 - Live Kite mode now works if you populate `KITE_API_KEY` in
   `backend/.env` per `docs/kite-setup.md`
-- Inference runs on your machine — CPU by default (~60-90 s, then demo
-  fallback fires), or GPU if you uncomment the `deploy` block in
+- Inference runs on your machine — CPU by default (~60-90 s, explicit
+  unavailable state on timeout), or GPU if you uncomment the `deploy` block in
   `docker-compose.yml` and have `nvidia-container-toolkit`
 
 To shut down: `Ctrl+C` then `docker compose down`. To wipe state:
@@ -57,8 +59,8 @@ To shut down: `Ctrl+C` then `docker compose down`. To wipe state:
 ## Path C — 10 minutes: native install (for deep code review)
 
 ```powershell
-git clone https://github.com/anweshmohanty/finsight-os.git
-cd finsight-os
+git clone https://github.com/an-wesh/kaggle-gemma4.git
+cd kaggle-gemma4
 
 # Backend
 cd backend
@@ -137,22 +139,24 @@ Invoke-RestMethod -Uri "http://localhost:8000/analyze-behavior" -Method Post `
     -ContentType "application/json" -Body "{}" |
     Select inference_seconds, behavioral_score
 # Expect on GPU: inference_seconds in 5-15 range, score varies (NOT 892)
-# Expect on CPU: inference_seconds=2.1 (demo fallback), score=892 — see below
+# Expect on CPU: inference_seconds in the real runtime range if Gemma completes;
+# if it times out, detected_pattern="Gemma unavailable" and no score is claimed
 ```
 
 ---
 
-## On the demo fallback (CPU only, complete honesty)
+## On CPU timeouts (complete honesty)
 
 Real Gemma 4 inference exceeds 90 seconds on a 4-year-old i7-1255U /
-16 GB CPU laptop (the development hardware). When the timeout fires, a
-representative response is returned (`inference_seconds=2.1`,
-`behavioral_score=892`) so the UX is testable without a 90-second wait.
+16 GB CPU laptop (the development hardware). When the timeout fires, the
+app now returns an explicit `detected_pattern="Gemma unavailable"` state
+with `inference_seconds=null`. It does not invent a behavioral score,
+pattern, vow violation, or commitment phrase.
 
 **The full inference pipeline is real and runs on every request** —
 prompt construction, Ollama call, JSON parsing, RAG enrichment, behavioral
-DNA persistence, SSE streaming. Only the model output itself stubs to the
-representative response when the timeout fires.
+DNA persistence, SSE streaming. Paper and live Kite modes only show
+Finsight Intelligence insights when Gemma returns parseable JSON.
 
 On a GPU instance (Path A live demo, or Path B with `OLLAMA_NUM_GPU=99`,
 or any judge running on hardware better than i7-1255U), real Gemma
@@ -208,7 +212,7 @@ message and the OS — we'll fix and credit you in the next release.
 ## Contact
 
 Submission by Anwesh Mohanty for the Kaggle Gemma 4 Good Hackathon, May
-2026. Email: anweshmohanty69@gmail.com · GitHub: @anweshmohanty.
+2026. Email: anweshmohanty69@gmail.com · GitHub: @an-wesh.
 
 If you're at SEBI, Zerodha, or any institution working on retail investor
 protection in India, see `docs/pilot-pitch.md` for a one-page proposal

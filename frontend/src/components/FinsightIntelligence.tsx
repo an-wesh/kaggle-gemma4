@@ -63,7 +63,7 @@ export function FinsightIntelligence({
   const pct   = (score / 1000) * 100;
   const modelLabel = formatModel(model);
   const inferS = analysis?.inference_seconds ?? null;
-  const isRealInference = inferS !== null && inferS > 5;  // demo fallback is 2.1s
+  const isRealInference = inferS !== null && inferS > 0;
 
   // Header shared
   const header = (
@@ -111,7 +111,7 @@ export function FinsightIntelligence({
           title={
             isRealInference
               ? `Real Gemma 4 inference, CPU-local, ${inferS!.toFixed(2)}s`
-              : "Local AI · timing unavailable (demo fallback)"
+              : "Gemma inference unavailable or still pending"
           }
           style={{
             marginLeft: "auto", display: "flex", alignItems: "center", gap: "5px",
@@ -225,6 +225,35 @@ export function FinsightIntelligence({
           <Shimmer h={6} />
           <Shimmer h={52} />
           <Shimmer h={64} />
+        </div>
+      </div>
+    );
+  }
+
+  if (analysis.detected_pattern === "Gemma unavailable" && analysis.inference_seconds === null) {
+    return (
+      <div style={{
+        background: "#fff", borderRadius: "12px",
+        border: "1px solid #E8E5DF", overflow: "hidden",
+      }}>
+        {header}
+        <div style={{ padding: "20px 16px" }}>
+          <div style={{
+            padding: "13px", borderRadius: "10px",
+            background: "#FFFBEB", border: "1px solid #FDE68A",
+          }}>
+            <div style={{
+              fontSize: "11px", fontWeight: "800", color: "#B45309",
+              textTransform: "uppercase", letterSpacing: "0.06em",
+              marginBottom: "6px",
+            }}>
+              Gemma inference unavailable
+            </div>
+            <p style={{ fontSize: "12px", color: "#7C5E10", lineHeight: "1.6" }}>
+              No behavioral score or pattern is being shown because Gemma did not complete this run.
+              The thinking log preserves the trade context that was prepared for the model.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -427,44 +456,6 @@ export function FinsightIntelligence({
             <p style={{ fontSize: "11px", color: "#6B6860", lineHeight: "1.6" }}>
               {analysis.sebi_disclosure}
             </p>
-          </div>
-        )}
-
-        {/* Crisis score — only show when elevated */}
-        {analysis.crisis_score > 40 && (
-          <div style={{
-            padding: "10px 13px", borderRadius: "10px",
-            background: analysis.crisis_score > 70 ? "#FEF2F2" : "#FFFBEB",
-            border: `1px solid ${analysis.crisis_score > 70 ? "#FECACA" : "#FDE68A"}`,
-          }}>
-            <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-            }}>
-              <span style={{
-                fontSize: "10px", fontWeight: "700",
-                color: analysis.crisis_score > 70 ? "#DC2626" : "#D97706",
-                textTransform: "uppercase", letterSpacing: "0.06em",
-              }}>
-                Financial Distress
-              </span>
-              <span style={{
-                fontSize: "12px", fontWeight: "800",
-                color: analysis.crisis_score > 70 ? "#DC2626" : "#D97706",
-              }}>
-                {analysis.crisis_score}/100
-              </span>
-            </div>
-            <div style={{
-              height: "4px", background: "#E8E5DF",
-              borderRadius: "2px", overflow: "hidden", marginTop: "6px",
-            }}>
-              <div style={{
-                height: "100%", borderRadius: "2px",
-                background: analysis.crisis_score > 70 ? "#DC2626" : "#D97706",
-                width: `${analysis.crisis_score}%`,
-                transition: "width 0.6s ease",
-              }} />
-            </div>
           </div>
         )}
 

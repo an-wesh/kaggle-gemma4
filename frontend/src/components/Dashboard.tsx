@@ -11,7 +11,6 @@ import { TradingVows } from "./TradingVows";
 import { BehavioralDNA } from "./BehavioralDNA";
 import { ThinkingLog } from "./ThinkingLog";
 import { ChartAnalyzer } from "./ChartAnalyzer";
-import { CrisisSupport } from "./CrisisSupport";
 import { LanguageSelector } from "./LanguageSelector";
 import { KiteAccountPanel } from "./KiteAccountPanel";
 import { StockSearch } from "./StockSearch";
@@ -101,7 +100,6 @@ export function Dashboard() {
   const theme = themeFor(mode);
   const [tradesCount, setTradesCount] = useState(0);
   const [language, setLanguage]         = useState<Language>("en");
-  const [crisisDismissed, setCrisis]    = useState(false);
   const [chartInsight, setChartInsight] = useState<string | null>(null);
   const [spinning, setSpinning]         = useState(false);
   const [ticker, setTicker]             = useState<TickerRow[]>(initTicker);
@@ -306,7 +304,6 @@ export function Dashboard() {
     setTimeout(() => setSpinning(false), 700);
   }, [refresh, fetchSession]);
 
-  const showCrisis = !!(analysis?.crisis_detected && !crisisDismissed);
 
   // ── Shared card style ──────────────────────────────────────────────────
   const card: React.CSSProperties = {
@@ -337,14 +334,6 @@ export function Dashboard() {
     <div style={{ minHeight: "100vh", background: "#F5F4F0" }}>
 
       {/* Overlays */}
-      {showCrisis && (
-        <CrisisSupport
-          crisisScore={analysis!.crisis_score}
-          crisisDetected
-          language={language}
-          onDismiss={() => setCrisis(true)}
-        />
-      )}
       <NudgeEngine analysis={analysis} />
 
       {/* ── Sticky header ───────────────────────────────────────────────── */}

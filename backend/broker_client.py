@@ -89,19 +89,7 @@ async def get_kite_trading_context(session_id: str) -> TradingContext:
 
     snapshot = await kite_client.get_account_snapshot(session_id)
 
-    trades = [
-        Trade(
-            trade_id=str(t.get("trade_id") or t.get("order_id") or ""),
-            symbol=str(t.get("symbol", "")),
-            action=str(t.get("action", "BUY")).upper(),
-            quantity=int(t.get("quantity", 0) or 0),
-            price=float(t.get("price", 0) or 0),
-            timestamp=_parse_timestamp(t.get("timestamp")),
-            pnl=_opt_float(t.get("realized_pnl")),
-            is_loss=bool(t.get("is_loss")) if t.get("is_loss") is not None else False,
-        )
-        for t in snapshot.get("trades", [])
-    ]
+    trades = _kite_snapshot_trades_for_ai(snapshot)
 
     margins = snapshot.get("margins", {}) or {}
     summary = snapshot.get("summary", {}) or {}
@@ -139,7 +127,15 @@ async def get_kite_trading_context(session_id: str) -> TradingContext:
         inferred_loss_streak=int(summary.get("inferred_loss_streak", 0) or 0),
         realized_pnl_source=str(summary.get("realized_pnl_source", "unknown")),
         open_pnl_source=str(summary.get("open_pnl_source", "unknown")),
-        analysis_notes=[str(w) for w in warnings if w],
+        analysis_notes=[
+            str(note)
+            for note in [
+                *warnings,
+                *_kite_position_notes(snapshot.get("positions", [])),
+                *_kite_holding_notes(snapshot.get("holdings", [])),
+            ]
+            if note
+        ],
     )
 
 
@@ -166,3 +162,81 @@ def _opt_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _norm_action(value: Any) -> str:
+    return "SELL" if str(value or "").upper() == "SELL" else "BUY"
+
+
+def _kite_snapshot_trades_for_ai(snapshot: dict[str, Any]) -> list[Trade]:
+    """
+    Closed live trades + current open positions for Gemma.
+
+    Kite's trade-book endpoint only describes executions. Current risk lives in
+    `positions`, so an account with an open live position but no closed trade
+    could previously look empty to the AI. We feed closed realized legs from
+    the trade book, then append one derived OPEN leg per current net position.
+    """
+    out: list[Trade] = []
+
+    for t in snapshot.get("trades", []) or []:
+        realized_pnl = _opt_float(t.get("realized_pnl"))
+        if realized_pnl is None:
+            continue
+        out.append(
+            Trade(
+                trade_id=str(t.get("trade_id") or t.get("order_id") or ""),
+                symbol=str(t.get("symbol", "")),
+                action=_norm_action(t.get("action")),
+                quantity=int(t.get("quantity", 0) or 0),
+                price=float(t.get("price", 0) or 0),
+                timestamp=_parse_timestamp(t.get("timestamp")),
+                pnl=realized_pnl,
+                is_loss=bool(t.get("is_loss")) if t.get("is_loss") is not None else realized_pnl < 0,
+            )
+        )
+
+    now = datetime.now(timezone.utc)
+    for pos in snapshot.get("positions", []) or []:
+        symbol = str(pos.get("symbol", "") or "")
+        qty = int(pos.get("quantity", 0) or 0)
+        price = float(pos.get("avg_price", pos.get("last_price", 0)) or 0)
+        if not symbol or qty <= 0 or price <= 0:
+            continue
+        out.append(
+            Trade(
+                trade_id=f"OPEN-POS-{symbol}-{_norm_action(pos.get('side'))}",
+                symbol=symbol,
+                action=_norm_action(pos.get("side")),
+                quantity=qty,
+                price=price,
+                timestamp=now,
+                pnl=None,
+                is_loss=False,
+            )
+        )
+
+    return out
+
+
+def _kite_position_notes(positions: list[dict[str, Any]]) -> list[str]:
+    notes: list[str] = []
+    for pos in (positions or [])[:5]:
+        notes.append(
+            "Open position: "
+            f"{pos.get('side', '')} {pos.get('symbol', '')} "
+            f"qty={pos.get('quantity', 0)} avg={pos.get('avg_price', 0)} "
+            f"open_pnl={pos.get('pnl', 0)}"
+        )
+    return notes
+
+
+def _kite_holding_notes(holdings: list[dict[str, Any]]) -> list[str]:
+    notes: list[str] = []
+    for holding in (holdings or [])[:3]:
+        notes.append(
+            "Holding: "
+            f"{holding.get('symbol', '')} qty={holding.get('quantity', 0)} "
+            f"avg={holding.get('avg_price', 0)} pnl={holding.get('pnl', 0)}"
+        )
+    return notes

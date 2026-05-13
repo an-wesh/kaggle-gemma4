@@ -9,8 +9,8 @@
 #   docker build -t finsight-backend ./backend
 #   docker run -p 8000:8000 -p 11434:11434 -v ./backend/data:/app/data finsight-backend
 #
-# On hardware without a GPU, gemma4:e2b runs on CPU and the demo fallback
-# kicks in for /analyze-behavior past the timeout (same as the native install).
+# On hardware without a GPU, gemma4:e2b runs on CPU and /analyze-behavior
+# reports Gemma unavailable if the model exceeds the configured timeout.
 # On hardware with NVIDIA GPU + nvidia-container-toolkit, set OLLAMA_NUM_GPU=99
 # in the env and real Gemma inference completes in ~5-8s.
 

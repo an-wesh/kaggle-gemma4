@@ -43,6 +43,9 @@ backend/.env
 .env
 .env.local
 .env.*.local
+backend/data/kite_access_token.encrypted
+backend/data/kite_access_token.profile.json
+backend/data/kite_secret.key
 *.pem
 *.key
 secrets/
@@ -58,6 +61,7 @@ finetune/wandb/
 # ── Editor / OS ────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 .DS_Store

@@ -61,13 +61,10 @@ export const api = {
   analyze: () => req<import("@/types").BehavioralAnalysis>("/analyze-behavior", { method: "POST", body: "{}" }),
   getDNA:  () => req<import("@/types").BehavioralDNA>("/behavioral-dna"),
 
-  // Vows + crisis resources
+  // Vows
   getVows:    () => req<{ vows: string[]; language: string }>("/trading-vows"),
   updateVows: (vows: string[], language = "en") =>
     req("/trading-vows", { method: "POST", body: JSON.stringify({ vows, preferred_language: language }) }),
-  getCrisisResources: (lang = "en") =>
-    req<{ helpline: string; message: string; action: string }>(`/crisis-resources?lang=${lang}`),
-
   // Trades + portfolio (mode-aware on the backend)
   confirmTrade: (symbol: string, qty: number, price: number, action: "BUY" | "SELL" = "BUY") =>
     req<{ order_id: string }>("/confirm-trade", {

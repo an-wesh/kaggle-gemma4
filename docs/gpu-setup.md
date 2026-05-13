@@ -10,10 +10,11 @@ configuration.
 
 ## Why this matters
 
-Real Gemma 4 E4B inference times out on a four-year-old i7-1255U / 16 GB
-laptop in our development environment, so the live demo falls back to a
-representative response. On any GPU instance with 16+ GB VRAM, the full
-inference pipeline returns in under 10 seconds. This guide is for:
+Real Gemma 4 E4B inference can exceed the timeout on a four-year-old
+i7-1255U / 16 GB laptop in our development environment. On timeout, the
+app now shows an explicit "Gemma unavailable" state instead of a
+representative behavioral response. On any GPU instance with 16+ GB VRAM,
+the full inference pipeline returns in under 10 seconds. This guide is for:
 
 - Recording the submission video with real Gemma streaming visible
 - Hosting the live demo for judges to verify
@@ -123,14 +124,14 @@ In the backend console:
 In the response JSON:
 ```json
 {
-  "inference_seconds": 4.82,                       ← real, not the 2.1 fallback
+  "inference_seconds": 4.82,                       ← real completed inference
   "behavioral_score": 847,                         ← varies, not exactly 892
   ...
 }
 ```
 
 In the UI badge in the dashboard:
-- Green "▮ Gemma 4 · e2b · 4.8s · local" pill (vs gray when fallback fires)
+- Green "▮ Gemma 4 · e2b · 4.8s · local" pill for completed inference
 
 ## Cost summary
 

@@ -21,7 +21,7 @@ interface Props {
  * analysis to surface as evidence when the user clicks it. Returns null
  * for non-step lines (no evidence to show).
  */
-type StepKind = "vow" | "pattern" | "score" | "nudge" | "lang" | "crisis" | "sebi" | null;
+type StepKind = "vow" | "pattern" | "score" | "nudge" | "lang" | "stress" | "sebi" | null;
 
 function stepKind(line: string): StepKind {
   if (/STEP 1/.test(line)) return "vow";
@@ -29,7 +29,7 @@ function stepKind(line: string): StepKind {
   if (/STEP 3/.test(line)) return "score";
   if (/STEP 4/.test(line)) return "nudge";
   if (/STEP 5/.test(line)) return "lang";
-  if (/STEP 6/.test(line)) return "crisis";
+  if (/STEP 6/.test(line)) return "stress";
   if (/STEP 7/.test(line)) return "sebi";
   return null;
 }
@@ -41,7 +41,7 @@ function stepColor(line: string): string {
   if (line.includes("STEP 3")) return "#2563EB"; // SCORE     — blue
   if (line.includes("STEP 4")) return "#DC2626"; // NUDGE     — red
   if (line.includes("STEP 5")) return "#0891B2"; // LANGUAGE  — cyan
-  if (line.includes("STEP 6")) return "#059669"; // CRISIS    — green
+  if (line.includes("STEP 6")) return "#059669"; // STRESS    — green
   if (line.includes("STEP 7")) return "#6B6860"; // SEBI      — grey
   return "#6B6860";
 }
@@ -56,7 +56,7 @@ const EVIDENCE_LABELS: Record<NonNullable<StepKind>, string> = {
   score:   "EVIDENCE · SCORE BREAKDOWN",
   nudge:   "EVIDENCE · COMMITMENT PHRASE",
   lang:    "EVIDENCE · LOCAL-LANGUAGE TRANSLATION",
-  crisis:  "EVIDENCE · CRISIS PROTOCOL",
+  stress:  "EVIDENCE · SESSION STRESS",
   sebi:    "EVIDENCE · SEBI RAG SOURCE",
 };
 
@@ -157,20 +157,20 @@ function EvidencePanel(props: {
         )
       )}
 
-      {kind === "crisis" && (
+      {kind === "stress" && (
         <div style={monoStyle}>
           <div>
-            <span style={{ color: "#9B9890" }}>crisis score</span>{" → "}
+            <span style={{ color: "#9B9890" }}>stress score</span>{" → "}
             <strong style={{ color }}>{analysis.crisis_score}</strong>
             <span style={{ color: "#9B9890" }}> / 100</span>
           </div>
           <div>
-            <span style={{ color: "#9B9890" }}>threshold</span>{" → 70 (helpline trigger)"}
+            <span style={{ color: "#9B9890" }}>monitoring threshold</span>{" → 70"}
           </div>
           <div>
-            <span style={{ color: "#9B9890" }}>protocol</span>{" → "}
+            <span style={{ color: "#9B9890" }}>stress flag</span>{" → "}
             <strong style={{ color: analysis.crisis_detected ? "#DC2626" : "#16A34A" }}>
-              {analysis.crisis_detected ? "TRIGGERED" : "below threshold"}
+              {analysis.crisis_detected ? "elevated" : "below threshold"}
             </strong>
           </div>
         </div>
@@ -301,7 +301,7 @@ export function ThinkingLog({
           <div style={{ fontSize: "10px", color: "#9B9890", marginTop: "1px" }}>
             {streaming
               ? (streamStatus || "Streaming Gemma reasoning…")
-              : `${stepCount} reasoning steps · local · no data sent${
+              : `${stepCount} reasoning steps · local Gemma · data stays private${
                   inferenceTime ? ` · ${inferenceTime.toFixed(1)}s` : ""
                 }`}
           </div>

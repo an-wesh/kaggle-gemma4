@@ -142,4 +142,4 @@ Detailed notebook: [docs/gpu-setup.md](gpu-setup.md).
 
 ## 8. Production / hosted demo
 
-For Vercel + Modal deployment (frontend → Vercel, backend + Ollama → Modal GPU container), follow [docs/deploy.md](deploy.md). When you deploy, whitelist the Modal/server egress IP on the Kite developer console.
+For GitHub + Vercel + Railway deployment, follow [docs/deploy.md](deploy.md). Kite API keys belong in the backend host's environment variables, not in Vercel's public frontend environment.

@@ -14,8 +14,7 @@ function currentMode(): string {
 interface UseStreamingOptions {
   pollIntervalMs?: number;
   /** When false, the hook does NOT auto-fire the analysis on mount or
-   *  on the polling interval. Used in Paper mode with zero trades — we
-   *  don't want to analyze emptiness and trigger the demo fallback. */
+   *  on the polling interval. Used in Paper mode with zero trades. */
   enabled?: boolean;
   /** Context hash — when this string/number changes, the hook re-runs the
    *  analysis. Used to gate Gemma re-execution to *meaningful* state changes
@@ -138,7 +137,7 @@ export function useStreamingAnalysis(
             setS(prev => ({
               ...prev,
               analysis: ev.analysis,
-              // If the demo path streamed a fallback log, prefer the result's
+              // Prefer the result's audited log over any partial stream text.
               // thinking_log because it includes the synthesized 7-step trace
               // formatted consistently with the e4b real-inference path.
               streamingText: ev.analysis.thinking_log ?? prev.streamingText,

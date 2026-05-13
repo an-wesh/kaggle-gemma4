@@ -12,13 +12,12 @@ load_dotenv()
 from models import TradingContext, BehavioralAnalysis, TradeRequest, VowsUpdate, Language
 from broker_client import get_trading_context, get_kite_trading_context
 from ai_engine import (
-    analyze_behavior, get_demo_analysis, warm_up_model, OLLAMA_MODEL,
+    analyze_behavior, get_unavailable_analysis, warm_up_model, OLLAMA_MODEL,
     analyze_behavior_stream,
 )
 from behavioral_dna import get_behavioral_dna, save_session, get_historical_context
 from multimodal_engine import analyze_chart_image, analyze_chart_full
 from rag_engine import retrieve_sebi_context
-from crisis_protocol import get_crisis_resources, should_trigger_crisis
 from market_data import get_market_snapshot
 from paper_trading import (
     record_trade as paper_record_trade,
@@ -58,10 +57,27 @@ user_vows: list[str] = [
 ]
 preferred_language = Language.EN
 
+
+def get_cors_origins() -> list[str]:
+    configured = [
+        origin.strip().rstrip("/")
+        for value in (
+            os.getenv("FRONTEND_URL", "http://localhost:3000"),
+            os.getenv("FRONTEND_ORIGINS", ""),
+        )
+        for origin in value.split(",")
+        if origin.strip()
+    ]
+    local_defaults = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    return list(dict.fromkeys(configured + local_defaults))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"\n Finsight OS - Behavioral Guardian for India's Retail Traders")
-    print(f"   Mode: {'DEMO (High-Risk Mock)' if DEMO_MODE else 'LIVE (Zerodha Kite)'}")
+    print(f"   Mode: {'DEMO (Seeded high-risk session)' if DEMO_MODE else 'LIVE (Zerodha Kite)'}")
     print(f"   AI:   {OLLAMA_MODEL} via Ollama (local, private, CPU)")
     print(f"   RAG:  Initializing SEBI circular index...")
     from rag_engine import get_collection
@@ -90,7 +106,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Finsight OS API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=get_cors_origins(),
+    allow_origin_regex=os.getenv(
+        "FRONTEND_ORIGIN_REGEX",
+        r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    ),
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -121,7 +141,8 @@ async def health(request: Request):
 async def analyze(request: Request):
     mode = get_mode(request)
 
-    # Read raw body — if empty or missing fields, fall back to mock context
+    # Read raw body. If empty or missing fields, build the real mode-scoped
+    # trading context from SQLite paper trades or the live Kite snapshot.
     try:
         body = await request.json()
     except Exception:
@@ -160,36 +181,36 @@ async def analyze(request: Request):
         f"retail F&O trading {loss_count} losses margin {ctx.margin.usage_ratio*100:.0f}%"
     )
 
-    # Run Gemma 4 analysis (falls back to demo if Ollama is offline)
+    # Run Gemma 4 analysis. If Ollama fails, show an explicit unavailable
+    # state instead of invented behavioral insight.
     try:
         result = await analyze_behavior(ctx)
     except Exception as e:
-        print(f"[ERROR] Gemma offline: {e} — using demo fallback")
-        result = get_demo_analysis(ctx)
+        print(f"[ERROR] Gemma failed: {e} - no model insight produced")
+        result = get_unavailable_analysis(ctx, f"Server error: {type(e).__name__}: {e}")
 
-    # Attach RAG-grounded SEBI disclosure
-    result.sebi_disclosure = sebi_ctx[:200]
-    result.sebi_source = sebi_source
+    model_completed = result.inference_seconds is not None
+    if model_completed:
+        # Attach RAG-grounded SEBI disclosure only to completed model output.
+        result.sebi_disclosure = sebi_ctx[:200]
+        result.sebi_source = sebi_source
 
     # Persist session to Behavioral DNA (skipped for empty paper-mode runs
     # by save_session itself — see behavioral_dna.save_session for the gate).
-    session_id = f"S{int(time.time())}"
-    activity_count = (
-        max(len(ctx.recent_trades), ctx.open_positions_count, ctx.holdings_count)
-        if mode == "kite"
-        else len(ctx.recent_trades)
-    )
-    save_session(
-        session_id,
-        result,
-        activity_count,
-        ctx.margin.usage_ratio * 100,
-        mode=dna_mode,
-    )
-
-    # Crisis protocol check
-    if should_trigger_crisis(result.crisis_score, result.behavioral_score, hist_loss_rate):
-        result.crisis_detected = True
+    if model_completed:
+        session_id = f"S{int(time.time())}"
+        activity_count = (
+            max(len(ctx.recent_trades), ctx.open_positions_count, ctx.holdings_count)
+            if mode == "kite"
+            else len(ctx.recent_trades)
+        )
+        save_session(
+            session_id,
+            result,
+            activity_count,
+            ctx.margin.usage_ratio * 100,
+            mode=dna_mode,
+        )
 
     return result
 
@@ -234,13 +255,15 @@ async def analyze_chart(request: Request, file: UploadFile = File(...)):
             ctx = get_trading_context(mode=mode)
         trader_context["recent_trades"] = [
             {"symbol": t.symbol, "action": t.action, "quantity": t.quantity,
-             "price": t.price, "is_loss": getattr(t, "is_loss", False)}
+             "price": t.price, "pnl": t.pnl, "is_loss": getattr(t, "is_loss", False)}
             for t in (ctx.recent_trades or [])[:10]
         ]
         trader_context["margin_usage_pct"] = round(ctx.margin.usage_ratio * 100)
         # Compute active loss streak from the tail of the trade list
         streak = 0
         for t in reversed(ctx.recent_trades or []):
+            if getattr(t, "pnl", None) is None:
+                continue
             if getattr(t, "is_loss", False):
                 streak += 1
             else:
@@ -264,7 +287,7 @@ async def analyze_chart(request: Request, file: UploadFile = File(...)):
     has_history    = bool((trader_context.get("dna") or {}).get("total_sessions"))
     recent_trades  = trader_context.get("recent_trades") or []
     loss_streak    = int(trader_context.get("loss_streak") or 0)
-    win_count      = sum(1 for t in recent_trades if not t.get("is_loss"))
+    win_count      = sum(1 for t in recent_trades if t.get("pnl") is not None and not t.get("is_loss"))
     trend          = (structure.get("trend") or "").lower()
     momentum       = (structure.get("momentum") or "").lower()
     volatility     = (structure.get("volatility") or "").lower()
@@ -339,11 +362,6 @@ async def update_vows(update: VowsUpdate):
 @app.get("/trading-vows")
 async def get_vows():
     return {"vows": user_vows, "language": preferred_language}
-
-@app.get("/crisis-resources")
-async def crisis_resources(lang: str = "en"):
-    return get_crisis_resources(lang)
-
 
 @app.get("/quotes/lookup")
 async def quotes_lookup(symbols: str = ""):
@@ -458,33 +476,28 @@ async def analyze_stream(request: Request):
             # Attach SEBI grounding + persist session at the result event
             if event.get("type") == "result":
                 analysis_dict = event["analysis"]
-                analysis_dict["sebi_disclosure"] = sebi_ctx[:200]
-                analysis_dict["sebi_source"] = sebi_source
+                model_completed = analysis_dict.get("inference_seconds") is not None
+                if model_completed:
+                    analysis_dict["sebi_disclosure"] = sebi_ctx[:200]
+                    analysis_dict["sebi_source"] = sebi_source
 
-                # Crisis post-processing & DNA save (mirrors /analyze-behavior)
-                if should_trigger_crisis(
-                    analysis_dict.get("crisis_score", 0),
-                    analysis_dict.get("behavioral_score", 0),
-                    hist_loss_rate,
-                ):
-                    analysis_dict["crisis_detected"] = True
-
-                try:
-                    session_id = f"S{int(time.time())}"
-                    activity_count = (
-                        max(len(ctx.recent_trades), ctx.open_positions_count, ctx.holdings_count)
-                        if mode == "kite"
-                        else len(ctx.recent_trades)
-                    )
-                    save_session(
-                        session_id,
-                        BehavioralAnalysis(**analysis_dict),
-                        activity_count,
-                        ctx.margin.usage_ratio * 100,
-                        mode=dna_mode,
-                    )
-                except Exception as e:
-                    print(f"[stream] save_session failed: {e}")
+                if model_completed:
+                    try:
+                        session_id = f"S{int(time.time())}"
+                        activity_count = (
+                            max(len(ctx.recent_trades), ctx.open_positions_count, ctx.holdings_count)
+                            if mode == "kite"
+                            else len(ctx.recent_trades)
+                        )
+                        save_session(
+                            session_id,
+                            BehavioralAnalysis(**analysis_dict),
+                            activity_count,
+                            ctx.margin.usage_ratio * 100,
+                            mode=dna_mode,
+                        )
+                    except Exception as e:
+                        print(f"[stream] save_session failed: {e}")
 
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
@@ -934,4 +947,6 @@ async def kite_logout(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", "8000"))
+    reload = os.getenv("RELOAD", "true" if "PORT" not in os.environ else "false").lower() == "true"
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=reload)

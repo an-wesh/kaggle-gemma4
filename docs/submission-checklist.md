@@ -38,9 +38,9 @@ Single-page T-minus-24h walkthrough. Don't submit until every box is ticked.
 - [ ] **GitHub repo** pushed, public visibility verified in incognito browser
 - [ ] **README.md** renders cleanly on github.com (badges, tables, code blocks)
 - [ ] **Vercel frontend** deployed — `https://finsight-os.vercel.app` opens to mode selector
-- [ ] **Modal backend** deployed — `/health` responds with `{model:"gemma4:e2b", edge_ai:true}`
-- [ ] **NEXT_PUBLIC_API_URL** env var on Vercel points to the Modal URL
-- [ ] **CORS** allows the Vercel domain (FRONTEND_URL env var on Modal)
+- [ ] **Railway backend** deployed — `/health` responds with `{model:"gemma4:e2b", edge_ai:true}`
+- [ ] **NEXT_PUBLIC_API_URL** env var on Vercel points to the Railway URL
+- [ ] **CORS** allows the Vercel domain (`FRONTEND_URL` / `FRONTEND_ORIGINS` env vars on Railway)
 - [ ] **YouTube upload** as **Public** (NOT Unlisted), title set, description filled
 - [ ] **Chapter markers** at 0:00 (Problem), 1:00 (Demo), 2:30 (Vision)
 - [ ] **All YouTube links** verified in incognito (no login required to watch)
@@ -98,8 +98,8 @@ If you need to update after submission:
 |---|---|---|
 | YouTube video shows "Private — sign in" to judges | You uploaded as Unlisted, not Public | Change to Public in YouTube Studio |
 | Vercel deploy returns 404 | Build failed silently | Check Vercel deployment logs; usually a missing env var |
-| Modal cold-start exceeds 60 s on first hit | First container needs to download Gemma weights | Hit `/health` once 5 min before judging window opens |
-| `/analyze-behavior` returns 500 | Ollama not started inside Modal container | Check Modal logs; the `subprocess.Popen(["ollama","serve"])` may have failed |
+| Hosted analysis shows Gemma unavailable | Railway CPU backend cannot reach an Ollama/Gemma runtime | Use local Ollama for judging or point `OLLAMA_HOST` at a reachable GPU/Ollama service |
+| `/analyze-behavior` returns 500 | Backend startup/config issue | Check Railway logs and confirm all required backend env vars are set |
 | Live Kite "Login with Zerodha" 404s | KITE_REDIRECT_URL doesn't match the registered app's URL | Step 1 of `docs/kite-setup.md` |
 | Cover image attaches but renders blurry | Wrong aspect ratio uploaded | Re-export at exactly 1280×720 PNG |
 | Word count > 1500 | Writeup expanded beyond limit | Trim from References section first |

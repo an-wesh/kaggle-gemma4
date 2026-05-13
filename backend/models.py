@@ -64,8 +64,8 @@ class BehavioralAnalysis(BaseModel):
     sebi_disclosure: Optional[str] = None
     sebi_source: Optional[str] = None  # RAG citation
     thinking_log: Optional[str] = None
-    crisis_detected: bool = False       # Financial distress flag
-    crisis_score: int = 0              # 0-100 distress severity
+    crisis_detected: bool = False       # Elevated session-stress flag
+    crisis_score: int = 0              # 0-100 session-stress severity
     chart_insight: Optional[str] = None  # From multimodal analysis
     vows_violated: list[str] = []
     inference_seconds: Optional[float] = None  # Real local-CPU Gemma latency

@@ -77,7 +77,7 @@ In the startup logs you'll see:
 
 ```
 Finsight OS - Behavioral Guardian for India's Retail Traders
-   Mode: DEMO (High-Risk Mock)
+   Mode: DEMO (Seeded high-risk session)
    AI:   gemma4:e4b via Ollama (local, private, CPU)
    RAG:  SEBI circulars indexed
 ```

@@ -47,7 +47,7 @@ Open [http://localhost:3000](http://localhost:3000) → pick a mode → start ex
 
 For Live Kite Connect, follow [`docs/kite-setup.md`](docs/kite-setup.md) (5 minutes, free).
 
-For GPU deployment, follow [`docs/gpu-setup.md`](docs/gpu-setup.md) (RunPod / Modal / Kaggle / Colab recipes).
+For GitHub + Vercel + Railway deployment, follow [`docs/deploy.md`](docs/deploy.md). For GPU-backed Gemma, see [`docs/gpu-setup.md`](docs/gpu-setup.md).
 
 ---
 
@@ -75,7 +75,7 @@ Three layers running on the user's device, with a single read-only call to Yahoo
 |---|---|
 | **Frontend** | Next.js 14 (App Router), TypeScript, inline-CSS theme, DM Sans, Server-Sent Events client |
 | **API** | FastAPI + Uvicorn, 12 endpoints, mode-aware dispatcher |
-| **Engines** | Gemma 4 via Ollama, ChromaDB SEBI RAG, paper-trading SQLite, behavioral DNA SQLite, crisis protocol, multimodal vision, Live Kite Connect adapter |
+| **Engines** | Gemma 4 via Ollama, ChromaDB SEBI RAG, paper-trading SQLite, behavioral DNA SQLite, multimodal vision, Live Kite Connect adapter |
 
 Open [`docs/architecture.html`](docs/architecture.html) in any browser for the full diagram.
 
@@ -102,6 +102,7 @@ Open [`docs/architecture.html`](docs/architecture.html) in any browser for the f
 | [`docs/architecture.html`](docs/architecture.html) | System architecture diagram (open in browser) |
 | [`docs/cover-image.html`](docs/cover-image.html) | 1280×720 submission cover image |
 | [`docs/kite-setup.md`](docs/kite-setup.md) | 5-minute Live Kite Connect walkthrough |
+| [`docs/deploy.md`](docs/deploy.md) | GitHub + Vercel + Railway deployment guide |
 | [`docs/gpu-setup.md`](docs/gpu-setup.md) | Cloud GPU deployment recipes (Kaggle / RunPod / Modal / Colab) |
 | [`docs/video-script.md`](docs/video-script.md) | 3-minute face-cam + screen-recording shot list |
 | [`docs/recording-setup.md`](docs/recording-setup.md) | Equipment + lighting + audio for the face-cam demo |
@@ -118,7 +119,7 @@ Open [`docs/architecture.html`](docs/architecture.html) in any browser for the f
 - **Backend** — Python 3.10+, FastAPI, Pydantic v2, SQLAlchemy, ChromaDB, httpx, yfinance, kiteconnect (optional)
 - **AI** — Gemma 4 (E2B / E4B) via Ollama, ChromaDB embeddings for SEBI RAG, optional QLoRA adapter via PEFT + bitsandbytes
 - **Storage** — SQLite (paper trading + behavioral DNA), ChromaDB (RAG vectors), all on local disk
-- **Deployment** — Local CPU by default; GPU-ready via env vars (Modal / RunPod / Kaggle templates included)
+- **Deployment** — Vercel frontend + Railway backend; local CPU by default; GPU-ready via env vars
 
 ---
 
@@ -126,12 +127,12 @@ Open [`docs/architecture.html`](docs/architecture.html) in any browser for the f
 
 | Hardware | Real Gemma E2B inference | UX experience |
 |---|---|---|
-| i7-1255U / 16 GB CPU (dev) | ~60-80 s | Demo fallback at 90 s timeout |
+| i7-1255U / 16 GB CPU (dev) | ~60-90 s | Real inference if completed; explicit unavailable state on timeout |
 | Free Kaggle T4 GPU | ~5-8 s | Real inference visible |
 | RunPod A4000 (~$0.30/hr) | ~3-5 s | Real inference fast |
 | Modal A10G serverless | ~4-7 s | Real inference at scale |
 
-The full inference pipeline — prompt construction, Ollama call, JSON parsing, RAG enrichment, behavioral DNA persistence, SSE streaming — runs on every request regardless of hardware. Only the model output itself stubs to a representative response when the timeout fires on this CPU. Override `OLLAMA_NUM_GPU=99` and the timeout never fires.
+The full inference pipeline — prompt construction, Ollama call, JSON parsing, RAG enrichment, behavioral DNA persistence, SSE streaming — runs on every request regardless of hardware. Paper and live Kite insights are never stubbed: if Gemma times out or returns invalid JSON, the UI shows an explicit "Gemma unavailable" state instead of a behavioral score or pattern. Override `OLLAMA_NUM_GPU=99` for faster local inference.
 
 ---
 

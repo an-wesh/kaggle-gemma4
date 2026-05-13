@@ -121,13 +121,13 @@ Quick cuts showing the engineering depth. No voiceover for the first 5 seconds �
 
 **Voiceover** during 1:35–1:50:
 
-> "Real FIFO trade matching. Twelve API endpoints. Seven local engines — Gemma, ChromaDB SEBI grounding, paper trading, behavioral history, crisis protocol, multimodal vision, live broker integration. Everything runs on the user's machine."
+> "Real FIFO trade matching. Twelve API endpoints. Six local engines — Gemma, ChromaDB SEBI grounding, paper trading, behavioral history, multimodal vision, live broker integration. Everything runs on the user's machine."
 
-**1:50 – 2:20 · Multilingual + crisis cutaway**
+**1:50 – 2:20 · Multilingual + live trust cutaway**
 
 - **1:50 – 1:55** — cursor clicks the language selector in the header. Hindi / Telugu / Tamil options appear. Click Hindi.
 - **1:55 – 2:05** — re-trigger the Speed Bump (place another BUY). The modal now shows the commitment phrase in **Devanagari** below the English line. Hold the dual-language frame for 3 seconds.
-- **2:05 – 2:15** — cut to the Crisis Support modal (trigger by raising crisis score to 75+ in seed data, OR have a debug "Show Crisis" link you click in passing). It shows iCALL helpline + "Talk to someone in your language" in 4 scripts.
+- **2:05 – 2:15** — cut to Live Kite status and the privacy badge. Emphasize that broker credentials live on the backend, while Gemma analysis stays local/private.
 - **2:15 – 2:20** — back to dashboard, Live Kite Connect mode pill visible in header. Quick caption: *"Live Kite Connect · Free tier · ₹0/month"*
 
 **Voiceover:**

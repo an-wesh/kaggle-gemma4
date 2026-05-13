@@ -7,8 +7,8 @@ realize P&L against the oldest open BUYs for the same symbol.
 
 This module is what makes the "real trades" story credible in code review:
 every trade the user places is persisted, has a unique sequential order ID,
-and survives server restart. Prompt C (next) feeds these closed trades into
-the Gemma behavioral analysis instead of the hardcoded mock losers in
+and survives server restart. Prompt C (next) feeds these session trades into
+the Gemma behavioral analysis instead of seeded demo-only examples in
 broker_client.get_trading_context().
 
 Design notes:
@@ -288,15 +288,14 @@ def get_session_pnl(since: datetime | None = None, mode: str = "demo") -> dict[s
 
 def get_session_trades_for_ai(since_minutes: int = 240, mode: str = "demo") -> list[Trade]:
     """
-    Recent CLOSED legs shaped as pydantic Trade for the Gemma prompt.
+    Recent session legs shaped as pydantic Trade for the Gemma prompt.
 
-    Each closed leg represents a completed round-trip with realized P&L —
-    this matches the semantics of the original mock_context (one record per
-    completed trade, with pnl + is_loss set). Open positions are excluded
-    from this list because they have no realized pnl yet; they show up
-    instead in the margin calculation via compute_margin().
+    Closed legs represent completed round-trips with realized P&L. Open legs
+    are also included with pnl=None so Gemma can see that the user has placed
+    trades even before those positions are closed. Fully matched entry legs
+    are omitted to avoid double-counting a completed round-trip.
 
-    Ordering: oldest first (matches how broker_client built mock context).
+    Ordering: oldest first (matches how broker_client builds context).
     """
     init_db(mode)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
@@ -307,7 +306,10 @@ def get_session_trades_for_ai(since_minutes: int = 240, mode: str = "demo") -> l
             """
             SELECT * FROM paper_trades
              WHERE timestamp >= ?
-               AND realized_pnl IS NOT NULL
+               AND (
+                    realized_pnl IS NOT NULL
+                    OR quantity_remaining > 0
+               )
              ORDER BY timestamp ASC
             """,
             (cutoff.isoformat(),),
@@ -315,16 +317,19 @@ def get_session_trades_for_ai(since_minutes: int = 240, mode: str = "demo") -> l
 
     out: list[Trade] = []
     for r in rows:
+        is_open = r["realized_pnl"] is None
         out.append(
             Trade(
                 trade_id=r["order_id"],
                 symbol=r["symbol"],
                 action=r["action"],
-                quantity=r["quantity"],
+                quantity=r["quantity_remaining"] if is_open else r["quantity"],
                 price=r["price"],
                 timestamp=datetime.fromisoformat(r["timestamp"]),
-                pnl=r["realized_pnl"],
-                is_loss=bool(r["is_loss"]) if r["is_loss"] is not None else False,
+                pnl=None if is_open else r["realized_pnl"],
+                is_loss=False if is_open else (
+                    bool(r["is_loss"]) if r["is_loss"] is not None else False
+                ),
             )
         )
     return out

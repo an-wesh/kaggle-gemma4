@@ -95,13 +95,13 @@ speed up the screen recording in DaVinci by 5%.
 
 > "Real FIFO trade matching. Twelve API endpoints. Seven local engines —
 > Gemma, ChromaDB SEBI grounding, paper trading, behavioral history,
-> crisis protocol, multimodal vision, live broker integration. Everything
+> multimodal vision, live broker integration. Everything
 > runs on the user's machine."
 
 Speak this in time with the cuts. One short sentence per cut. The list
 of engines should land while the architecture diagram is on screen.
 
-**Block E · Multilingual + crisis (1:50 – 2:20)**
+**Block E · Multilingual + live broker trust (1:50 – 2:20)**
 
 > "It speaks four Indian languages. The same edge AI that protects an
 > English-speaking engineer in Bangalore protects a Telugu-speaking
@@ -189,7 +189,7 @@ ACT 2 (voiceover over screen-cap, 1:45) — recorded later
   • Block C · Speed Bump: button enabled, type letter by letter,
     12 seconds for rational brain, still in control
   • Block D · guts: FIFO, 12 endpoints, 7 local engines
-  • Block E · langs: 4 langs, crisis protocol, Live Kite ₹0
+  • Block E · langs: 4 langs, Live Kite ₹0
 
 ACT 3 (face-cam, 0:40) — pause 2 sec, then:
   • 9.6M, 72% B30, 75% under ₹5L, 4 langs
