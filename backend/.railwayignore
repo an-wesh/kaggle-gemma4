@@ -1,0 +1,15 @@
+Dockerfile
+
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+data/*.db
+data/chroma_db/
+data/sebi_circulars/*.txt
+data/kite_access_token.encrypted
+data/kite_access_token.profile.json
+data/kite_secret.key
+
+server_stdout.txt
+server_stderr.txt
