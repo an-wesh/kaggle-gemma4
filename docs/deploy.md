@@ -40,21 +40,43 @@ Create a Railway service from the GitHub repo.
 
 Project settings:
 
+- Source repo: `an-wesh/kaggle-gemma4`
+- Branch: `main`
 - Root directory: `backend`
-- Build: Railpack/Nixpacks Python build from `backend/requirements.txt`
-- Start command: provided by root `railway.json`
-- Health check path: `/health`
+- Builder: Railpack
+- Build command: leave blank
+- Config-as-code file path: `/railway.json`
+- Start command: provided by `railway.json`
+- Health check path: provided by `railway.json` (`/health`)
+- Serverless: off for judging, so the backend does not sleep during demos
 
-Set Railway environment variables:
+If Railway does not read the config file, set these fields manually:
 
 ```bash
-DEMO_MODE=false
+Start Command = python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+Healthcheck Path = /health
+Healthcheck Timeout = 300
+Restart Policy = On Failure
+Max Restart Retries = 10
+```
+
+Set Railway environment variables from `backend/.env.railway.example`:
+
+```bash
+DEMO_MODE=true
 FRONTEND_URL=https://your-vercel-app.vercel.app
 FRONTEND_ORIGINS=https://your-vercel-app.vercel.app
+FRONTEND_ORIGIN_REGEX=https://.*\.vercel\.app
 OLLAMA_MODEL=gemma4:e2b
-OLLAMA_HOST=http://localhost:11434
+OLLAMA_HOST=https://your-ollama-gpu-runtime.example.com
 OLLAMA_TIMEOUT_S=120
+PAPER_CAPITAL=100000
+PYTHONUNBUFFERED=1
 ```
+
+Do not use `OLLAMA_HOST=http://localhost:11434` on Railway unless the same
+Railway container is also running Ollama. The recommended hosted path is Railway
+for FastAPI plus a reachable GPU/Ollama runtime for Gemma.
 
 Optional Kite variables, only when the judge has a Kite Connect app:
 
@@ -88,13 +110,15 @@ Import the same GitHub repo into Vercel.
 
 Project settings:
 
+- Source repo: `an-wesh/kaggle-gemma4`
+- Branch: `main`
 - Framework preset: Next.js
 - Root directory: `frontend`
 - Install command: `npm install`
 - Build command: `npm run build`
 - Output: Next.js default
 
-Set Vercel environment variables:
+Set Vercel environment variables from `frontend/.env.vercel.example`:
 
 ```bash
 NEXT_PUBLIC_API_URL=https://your-railway-service.up.railway.app
